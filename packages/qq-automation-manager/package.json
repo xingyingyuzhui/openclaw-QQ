@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "QQ automation manager with internal route scheduler",
+  "license": "Apache-2.0",
   "openclaw": {
     "extensions": [
       "./index.ts"

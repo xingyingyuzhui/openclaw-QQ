@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "OpenClaw QQ channel plugin via OneBot v11",
+  "license": "Apache-2.0",
   "bin": {
     "openclaw-qq-onboard": "./bin/onboard.js"
   },

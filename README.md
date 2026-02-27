@@ -304,6 +304,7 @@ rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 ## 11. 安全与升级建议
 
 - 不要提交真实 `openclaw.json`、NapCat 登录态、会话日志。
+- 当前开源协议：`Apache-2.0`（见 [LICENSE](./LICENSE)）。
 - 升级前先做最小回归：
   - 文本私聊
   - 媒体私聊
