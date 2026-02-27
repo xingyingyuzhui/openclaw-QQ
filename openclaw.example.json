@@ -1,0 +1,61 @@
+{
+  "channels": {
+    "qq": {
+      "wsUrl": "ws://127.0.0.1:3001/",
+      "accessToken": "YOUR_ONEBOT_ACCESS_TOKEN",
+      "ownerUserId": "QQ_OWNER_ID",
+      "mediaProxyEnabled": true,
+      "mediaProxyListenHost": "0.0.0.0",
+      "mediaProxyListenPort": 18890,
+      "mediaProxyBaseUrl": "http://host.docker.internal:18890",
+      "mediaProxyTtlSec": 1800,
+      "replyRunTimeoutMs": 600000,
+      "routePreemptOldRun": true
+    }
+  },
+  "plugins": {
+    "allow": ["qq", "qq-automation-manager"],
+    "entries": {
+      "qq": {
+        "enabled": true
+      },
+      "qq-automation-manager": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "configVersion": 1,
+          "reconcileOnStartup": true,
+          "reconcileIntervalMs": 120000,
+          "strictAgentOnly": true,
+          "targets": [
+            {
+              "id": "qq-user-demo-daylife",
+              "enabled": false,
+              "route": "user:123456789",
+              "executionMode": "agent-only",
+              "job": {
+                "type": "cron-agent-turn",
+                "schedule": {
+                  "kind": "cron",
+                  "expr": "*/5 9-22 * * *",
+                  "tz": "Asia/Shanghai"
+                },
+                "message": "请根据上下文自然发起一条简短关怀。",
+                "thinking": "low",
+                "timeoutSeconds": 120,
+                "smart": {
+                  "enabled": true,
+                  "minSilenceMinutes": 30,
+                  "activeConversationMinutes": 25,
+                  "randomIntervalMinMinutes": 30,
+                  "randomIntervalMaxMinutes": 60,
+                  "maxChars": 48
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

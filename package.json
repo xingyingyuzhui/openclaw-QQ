@@ -1,0 +1,13 @@
+{
+  "name": "openclaw-qq-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenClaw QQ channel plugin + QQ automation manager",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "npm run -ws --if-present typecheck",
+    "build": "npm run -ws --if-present build"
+  }
+}
