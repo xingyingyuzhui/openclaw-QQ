@@ -41,6 +41,7 @@ Expected gateway log markers:
 - WS connect fails: verify host/port routing and token.
 - Media parsing unstable: ensure `messagePostFormat=array`.
 - Automation not firing: verify `targets[].enabled=true`, valid route, and schedule window.
+- For target management workflow, use skill doc: `skills/qq-automation-admin/SKILL.md`.
 
 ## Rollback
 1. Set:

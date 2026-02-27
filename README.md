@@ -214,3 +214,5 @@ npm install @openclaw/qq @openclaw/qq-automation-manager
 - NapCat 部署细节：`NAPCAT_SETUP.md`
 - 兼容矩阵：`COMPATIBILITY.md`
 - 变更记录：`CHANGELOG.md`
+- 功能详细版：`FEATURES_ZH.md`
+- 自动化 Skill：`skills/qq-automation-admin/SKILL.md`
