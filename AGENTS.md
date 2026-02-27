@@ -1,7 +1,10 @@
 ## Prerequisites
 - OpenClaw `>= 2026.2.26`
-- OneBot v11 server ready (`message_post_format=array`)
-- Access to OpenClaw home (`OPENCLAW_HOME`, default `~/.openclaw`)
+- NapCatQQ `v4.17.25` (or newer with same OneBot semantics)
+- OneBot v11 forward WebSocket enabled
+- `messagePostFormat` must be `array`
+
+See full setup in `NAPCAT_SETUP.md`.
 
 ## Install (Git)
 ```bash
@@ -16,31 +19,31 @@ npm install @openclaw/qq @openclaw/qq-automation-manager
 ## Configure
 1. Merge `openclaw.example.json` into `${OPENCLAW_HOME}/openclaw.json`.
 2. Fill:
-- `channels.qq.wsUrl`
+- `channels.qq.wsUrl` (e.g. `ws://127.0.0.1:3001/`)
 - `channels.qq.accessToken`
 - `channels.qq.ownerUserId` (optional)
-3. Ensure plugin IDs are in:
+3. Ensure plugin IDs exist in:
 - `plugins.allow`
-- `plugins.entries`
+- `plugins.entries` and set `enabled=true`
 
 ## Verify
 ```bash
 bash scripts/verify.sh --openclaw-home "$HOME/.openclaw"
 ```
 
-Expected:
-- gateway running
-- qq plugin loaded
-- qq-automation-manager plugin loaded
-- QQ connected to OneBot
+Expected gateway log markers:
+- plugin `qq` loaded
+- plugin `qq-automation-manager` loaded
+- `[QQ] Connected to OneBot server`
+- `[QQ] Logged in as:`
 
 ## Troubleshooting
-- If plugin not loaded: check `plugins.allow` and `plugins.entries.<id>.enabled`
-- If QQ not connected: check `wsUrl`/`accessToken` and OneBot logs
-- If automation not firing: check `targets[].enabled`, schedule, and route validity
+- WS connect fails: verify host/port routing and token.
+- Media parsing unstable: ensure `messagePostFormat=array`.
+- Automation not firing: verify `targets[].enabled=true`, valid route, and schedule window.
 
 ## Rollback
-1. Disable plugin entry:
+1. Set:
 - `plugins.entries.qq.enabled=false`
 - `plugins.entries.qq-automation-manager.enabled=false`
 2. Restart gateway.

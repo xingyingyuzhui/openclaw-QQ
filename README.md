@@ -4,48 +4,63 @@ OpenClaw QQ ecosystem monorepo:
 - `packages/qq`: QQ channel plugin (OneBot v11)
 - `packages/qq-automation-manager`: route-scoped automation trigger plugin (agent-only)
 
+## Version Baseline
+- OpenClaw: `>= 2026.2.26`
+- NapCatQQ: tested with `v4.17.25` (latest release at 2026-02-22)
+- OneBot protocol: v11 (forward WebSocket server)
+
+See details in:
+- `COMPATIBILITY.md`
+- `NAPCAT_SETUP.md`
+
 ## Features
 - Route-isolated QQ sessions (`user:/group:/guild:`)
-- Robust outbound delivery queue with retries and drop reasons
-- Inbound media resolve/materialize traces
-- Automation manager triggers agent turn, does not bypass channel sending
+- Inbound aggregation + media resolve/materialize traces
+- Outbound text/media queue with retry/drop reasons
+- Automation manager triggers `agent turn` only (no direct bypass send)
 
 ## Quick Install (Git)
-1. Clone into OpenClaw extensions directory.
-2. Enable plugin IDs in `plugins.allow` and `plugins.entries`.
-3. Apply config from `openclaw.example.json`.
-4. Restart gateway.
-
 ```bash
 git clone https://github.com/xingyingyuzhui/openclaw-QQ.git
 cd openclaw-QQ
 bash scripts/install.sh --openclaw-home "$HOME/.openclaw" --repo-path "$PWD"
+```
+
+Then merge `openclaw.example.json` into `${HOME}/.openclaw/openclaw.json`, and restart gateway:
+```bash
+openclaw gateway restart
+```
+
+Verify:
+```bash
 bash scripts/verify.sh --openclaw-home "$HOME/.openclaw"
 ```
 
 ## Install (npm)
-You can install each plugin package directly:
-
 ```bash
 npm install @openclaw/qq @openclaw/qq-automation-manager
 ```
 
-Then reference package entry files from your OpenClaw extension loading path.
+Use this path only if your OpenClaw extension loader is configured to resolve package entry files from npm modules.
 
-## Configuration
-Use `openclaw.example.json` as the baseline. Required keys:
+## Required OpenClaw Config
+Minimal required keys:
 - `channels.qq.wsUrl`
 - `channels.qq.accessToken`
 - `plugins.entries.qq.enabled=true`
 - `plugins.entries.qq-automation-manager.enabled=true`
 
 Optional owner binding:
-- `channels.qq.ownerUserId` (string QQ ID)
+- `channels.qq.ownerUserId`
 
-## Security Notes
-- No production tokens, QQ IDs, or local absolute paths are included.
-- Review config before deployment.
+## NapCat Critical Requirements
+- Must enable OneBot v11 WebSocket server for OpenClaw to connect.
+- Must use `messagePostFormat: "array"` (required for stable media parsing).
+- `host/port/token` must match your `channels.qq.wsUrl` and `channels.qq.accessToken`.
 
-## Troubleshooting
-- See `AGENTS.md` for deterministic install/verify flow.
-- See `packages/qq/LOGGING.md` for trace/event-level diagnosis.
+Read full setup:
+- `NAPCAT_SETUP.md`
+
+## Security Notice
+- This repository intentionally excludes production tokens, local absolute paths, and personal IDs.
+- Do not commit your real `openclaw.json` or NapCat runtime config.

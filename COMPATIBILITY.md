@@ -1,9 +1,20 @@
 # Compatibility
 
+## Baseline Matrix
 - OpenClaw: `>= 2026.2.26`
-- OneBot: v11 (NapCat/Lagrange tested)
-- Node.js: `>= 20`
+- QQ plugin: this repository
+- QQ automation manager: this repository
+- NapCatQQ: tested with `v4.17.25`
+- OneBot: v11
 
-## Notes
+## NapCat Protocol Requirements
+- Forward WebSocket server enabled
+- `messagePostFormat: "array"`
+- Stable token mapping with OpenClaw `channels.qq.accessToken`
+
+## Runtime Notes
 - This repository does not patch OpenClaw core.
-- QQ automation manager relies on OpenClaw CLI/runtime APIs already available in core.
+- Automation manager default is `agent-only`.
+- Owner mapping is configurable via:
+  - `channels.qq.ownerUserId`
+  - `OPENCLAW_QQ_OWNER_ID` (fallback)
