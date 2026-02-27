@@ -3,8 +3,8 @@
 OpenClaw QQ 生态插件仓库（Monorepo）。
 
 包含两个插件：
-- `packages/qq`：QQ 通道插件（OneBot v11）
-- `packages/qq-automation-manager`：QQ 自动化调度插件（只触发 agent，不旁路代发）
+- [`packages/qq`](./packages/qq)：QQ 通道插件（OneBot v11）
+- [`packages/qq-automation-manager`](./packages/qq-automation-manager)：QQ 自动化调度插件（只触发 agent，不旁路代发）
 
 目标：
 - 让 OpenClaw 在 QQ 场景可稳定收发文本/媒体
@@ -39,13 +39,13 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 - NapCatQQ `v4.17.25`
 - OneBot v11（Forward WebSocket）
 
-详细矩阵见：`COMPATIBILITY.md`
+详细矩阵见：[COMPATIBILITY.md](./COMPATIBILITY.md)
 
 ---
 
 ## 3. 功能清单
 
-### 3.1 `packages/qq`（通道插件）
+### 3.1 [`packages/qq`](./packages/qq)（通道插件）
 - QQ 私聊/群聊/频道入站处理
 - 入站聚合、去重、调度保护
 - 文本/媒体出站统一队列 + 重试 + 抖动
@@ -54,14 +54,14 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 - route 级策略/配额控制（文本/媒体/语音）
 - 结构化链路日志（chat/trace/gateway）
 
-### 3.2 `packages/qq-automation-manager`（自动化插件）
+### 3.2 [`packages/qq-automation-manager`](./packages/qq-automation-manager)（自动化插件）
 - `targets[]` 配置驱动调度
 - 支持 `cron/every/at`
 - 触发 route 对应 agent 的 `agent turn`
 - 智能触发参数（沉默窗口、活跃窗口、随机间隔）
 - 自动化状态落盘与可审计
 
-详细能力说明：`FEATURES_ZH.md`
+详细能力说明：[FEATURES_ZH.md](./FEATURES_ZH.md)
 
 ---
 
@@ -117,7 +117,7 @@ flowchart TD
 ```
 
 ### 5.3 Docker 场景
-参考 `NapCat-Docker`，至少暴露：
+参考 [NapCat-Docker](https://github.com/NapNeko/NapCat-Docker)，至少暴露：
 - `3001`（OneBot WS）
 - `6099`（NapCat WebUI）
 
@@ -125,7 +125,7 @@ flowchart TD
 - `/app/napcat/config`
 - `/app/.config/QQ`
 
-完整步骤见：`NAPCAT_SETUP.md`
+完整步骤见：[NAPCAT_SETUP.md](./NAPCAT_SETUP.md)
 
 ---
 
@@ -139,7 +139,7 @@ bash scripts/install.sh --openclaw-home "$HOME/.openclaw" --repo-path "$PWD"
 ```
 
 ### 6.2 配置
-将 `openclaw.example.json` 合并到 `${HOME}/.openclaw/openclaw.json`，至少填：
+将 [openclaw.example.json](./openclaw.example.json) 合并到 `${HOME}/.openclaw/openclaw.json`，至少填：
 - `channels.qq.wsUrl`
 - `channels.qq.accessToken`
 
@@ -171,7 +171,7 @@ bash scripts/verify.sh --openclaw-home "$HOME/.openclaw"
 ```bash
 bash scripts/install.sh --openclaw-home "$OPENCLAW_HOME" --repo-path "$REPO_PATH"
 ```
-3. 读取并合并 `openclaw.example.json` 到目标配置。
+3. 读取并合并 [`openclaw.example.json`](./openclaw.example.json) 到目标配置。
 4. 注入环境参数：
 - `channels.qq.wsUrl`
 - `channels.qq.accessToken`
@@ -247,7 +247,7 @@ bash scripts/verify.sh --openclaw-home "$OPENCLAW_HOME"
 ```
 
 管理这个配置可用内置 skill：
-- `skills/qq-automation-admin/SKILL.md`
+- [`skills/qq-automation-admin/SKILL.md`](./skills/qq-automation-admin/SKILL.md)
 
 ---
 
@@ -278,7 +278,7 @@ rg "materialize_error_code|unresolvedReasons" "${OPENCLAW_HOME}/workspace/qq_ses
 rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 ```
 
-详细事件字典：`packages/qq/LOGGING.md`
+详细事件字典：[packages/qq/LOGGING.md](./packages/qq/LOGGING.md)
 
 ---
 
@@ -313,11 +313,10 @@ rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 ---
 
 ## 12. 文档索引
-- 详细功能：`FEATURES_ZH.md`
-- NapCat 安装：`NAPCAT_SETUP.md`
-- Agent 运行指引：`AGENTS.md`
-- 兼容矩阵：`COMPATIBILITY.md`
-- 日志字典：`packages/qq/LOGGING.md`
-- 自动化 Skill：`skills/qq-automation-admin/SKILL.md`
-- 变更记录：`CHANGELOG.md`
-
+- 详细功能：[FEATURES_ZH.md](./FEATURES_ZH.md)
+- NapCat 安装：[NAPCAT_SETUP.md](./NAPCAT_SETUP.md)
+- Agent 运行指引：[AGENTS.md](./AGENTS.md)
+- 兼容矩阵：[COMPATIBILITY.md](./COMPATIBILITY.md)
+- 日志字典：[packages/qq/LOGGING.md](./packages/qq/LOGGING.md)
+- 自动化 Skill：[skills/qq-automation-admin/SKILL.md](./skills/qq-automation-admin/SKILL.md)
+- 变更记录：[CHANGELOG.md](./CHANGELOG.md)
