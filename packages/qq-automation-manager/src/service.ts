@@ -5,7 +5,7 @@ import type { OpenClawConfig, OpenClawPluginApi, OpenClawPluginService } from "o
 import { z } from "zod";
 
 const OWNER_QQ = String(process.env.OPENCLAW_QQ_OWNER_ID || "").trim();
-const OWNER_ROUTE = OWNER_QQ ? `user:` : "";
+const OWNER_ROUTE = OWNER_QQ ? `user:${OWNER_QQ}` : "";
 const OWNER_AGENT = "main";
 
 type CronSchedule =

@@ -12,6 +12,7 @@ OpenClaw QQ 生态插件仓库（Monorepo），包含：
 - 协议：OneBot v11（正向 WebSocket）
 
 详细兼容说明见：`COMPATIBILITY.md`
+功能详细说明见：`FEATURES_ZH.md`
 
 ## 插件功能总览
 
@@ -42,6 +43,12 @@ OpenClaw QQ 生态插件仓库（Monorepo），包含：
 - route 合法性校验（`user:/group:/guild:`）
 - 调度状态持久化与幂等更新
 - 自动化链路与聊天链路日志口径分离（`source=automation|chat`）
+
+## 深入功能说明
+
+如果你希望按“能力边界 / 链路机制 / 配置开关 / 典型场景 / 已知限制”系统理解插件，请直接阅读：
+
+- `FEATURES_ZH.md`
 
 ## 项目结构
 
@@ -207,4 +214,3 @@ npm install @openclaw/qq @openclaw/qq-automation-manager
 - NapCat 部署细节：`NAPCAT_SETUP.md`
 - 兼容矩阵：`COMPATIBILITY.md`
 - 变更记录：`CHANGELOG.md`
-
