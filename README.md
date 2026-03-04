@@ -52,6 +52,7 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 - 媒体解析与 materialize（含回退链）
 - route 会话隔离与 resident agent 绑定
 - route 级策略/配额控制（文本/媒体/语音）
+- 可选轻量上下文模式（`liteContextRoutes`）用于压缩提示词噪音、降低本地模型 token 压力
 - 结构化链路日志（chat/trace/gateway）
 
 ### 3.2 [`packages/qq-automation-manager`](./packages/qq-automation-manager)（自动化插件）
@@ -246,12 +247,36 @@ bash scripts/verify.sh --openclaw-home "$OPENCLAW_HOME"
 }
 ```
 
+`channels.qq` 也可配置轻量上下文路由（适合本地模型）：
+
+```json
+{
+  "channels": {
+    "qq": {
+      "liteContextRoutes": [
+        "user:*",
+        "group:123456789",
+        "guild:*"
+      ]
+    }
+  }
+}
+```
+
 管理这个配置可用内置 skill：
 - [`skills/qq-automation-admin/SKILL.md`](./skills/qq-automation-admin/SKILL.md)
 
 ---
 
-## 9. 日志体系说明
+## 9. 隐私与脱敏约定
+
+- 仓库默认不包含任何个人 QQ、Token、本地绝对路径、私有运行日志。
+- 示例字段统一使用占位符：`QQ_OWNER_ID`、`YOUR_ONEBOT_ACCESS_TOKEN`、`${OPENCLAW_HOME}`。
+- 如二次发布，请先执行全文扫描并确认无敏感信息后再打 tag/release。
+
+---
+
+## 10. 日志体系说明
 
 ### 9.1 三层日志
 1. 网关日志：`${OPENCLAW_HOME}/logs/gateway.log`
@@ -282,7 +307,7 @@ rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 
 ---
 
-## 10. 常见问题
+## 11. 常见问题
 
 1. QQ 不连通
 - 检查 WS 地址、端口、token、容器网络。
@@ -301,7 +326,7 @@ rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 
 ---
 
-## 11. 安全与升级建议
+## 12. 安全与升级建议
 
 - 不要提交真实 `openclaw.json`、NapCat 登录态、会话日志。
 - 当前开源协议：`Apache-2.0`（见 [LICENSE](./LICENSE)）。
@@ -313,7 +338,7 @@ rg "\[QQ\]|qq-automation-manager" "${OPENCLAW_HOME}/logs/gateway.log"
 
 ---
 
-## 12. 文档索引
+## 13. 文档索引
 - 详细功能：[FEATURES_ZH.md](./FEATURES_ZH.md)
 - NapCat 安装：[NAPCAT_SETUP.md](./NAPCAT_SETUP.md)
 - Agent 运行指引：[AGENTS.md](./AGENTS.md)

@@ -53,6 +53,7 @@ export function buildQQSystemBlock(params: {
   inboundTextClean: string;
   mediaRemaining: number;
   voiceRemaining: number;
+  compactMode?: boolean;
 }): {
   systemBlock: string;
   shouldHardBlockMediaIntent: boolean;
@@ -67,9 +68,31 @@ export function buildQQSystemBlock(params: {
     inboundTextClean,
     mediaRemaining,
     voiceRemaining,
+    compactMode,
   } = params;
 
   let systemBlock = "";
+  if (compactMode) {
+    if (systemPrompt) systemBlock += `<system>${systemPrompt}</system>\n\n`;
+    systemBlock += `<system>你在QQ当前路由回复。不要调用message工具。需要发媒体时仅输出 MEDIA: 本地路径。</system>\n\n`;
+    if (splitSendRequested) {
+      systemBlock += `<system>用户要求分条发送：请用短句分行。</system>\n\n`;
+    }
+    if (historyContext) systemBlock += `<history>\n${historyContext}\n</history>\n\n`;
+    if (mediaBlocked || voiceBlocked) {
+      const blockHints: string[] = [];
+      if (mediaBlocked) blockHints.push("禁止输出 MEDIA: 图片/文件");
+      if (voiceBlocked) blockHints.push("禁止输出 MEDIA: 语音");
+      if (blockHints.length) {
+        systemBlock += `<system>当前路由限制：${blockHints.join("；")}。仅文本回复。</system>\n\n`;
+      }
+    }
+    if (!voiceBlocked && looksLikeVoiceIntent(inboundTextClean)) {
+      systemBlock += `<system>收到语音请求时优先用 qwen3-tts-local；失败才回退通用 tts。</system>\n\n`;
+    }
+    return { systemBlock, shouldHardBlockMediaIntent: false };
+  }
+
   if (systemPrompt) systemBlock += `<system>${systemPrompt}</system>\n\n`;
   systemBlock += `<system>你当前在QQ路由会话内回复。禁止调用message工具发送消息（包括发到user:/group:）。需要发图片/语音/文件时，直接在回复中输出MEDIA: 路径（可多行），由QQ插件发送到当前会话route。</system>\n\n`;
   systemBlock += `<system>QQ语音入站规则（强制）：当收到语音相关消息（如“[语音消息]”或音频文件）时，必须优先使用本地技能 whisper-stt-local 做转写，再基于转写文本直接回应用户意图；不要先问“要不要转写”。仅当音频损坏/不可读时，才提示用户重发。</system>\n\n`;

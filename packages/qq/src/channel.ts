@@ -618,6 +618,57 @@ function isAutomationMetaLeakText(text: string): boolean {
   return false;
 }
 
+function routeUsesLiteContext(config: QQConfig, route: string): boolean {
+  const routes = Array.isArray((config as any)?.liteContextRoutes) ? (config as any).liteContextRoutes : [];
+  const target = String(route || "").trim();
+  if (!target) return false;
+  return routes.some((it: unknown) => {
+    const rule = String(it || "").trim();
+    if (!rule) return false;
+    if (rule === "*") return true;
+    if (rule.endsWith("*")) return target.startsWith(rule.slice(0, -1));
+    return rule === target;
+  });
+}
+
+function scrubControlTokensForContext(input: string): string {
+  return String(input || "")
+    .replace(/\[\[\s*reply_to_current\s*\]\]/gi, "")
+    .replace(/\[\[\s*NO_REPLY\s*\]\]/gi, "")
+    .replace(/\bNO_REPLY\b/gi, "")
+    .replace(/\bANNOUNCE_SKIP\b/gi, "")
+    .replace(/\bQQ_AUTO_SKIP\b/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function scrubLiteRouteNoise(input: string): string {
+  let out = String(input || "");
+  if (!out) return "";
+  out = out.replace(/Conversation info \(untrusted metadata\):[\s\S]*?```/gi, "");
+  out = out.replace(/Sender \(untrusted metadata\):[\s\S]*?```/gi, "");
+  out = out.replace(/Pre-compaction memory flush[\s\S]*?NO_REPLY/gi, "");
+  out = out.replace(/Pre-compaction memory flush[\s\S]*$/gi, "");
+  out = out.replace(/\[\[\s*reply_to_current\s*\]\]/gi, "");
+  out = out.replace(/\bNO_REPLY\b/gi, "");
+  out = out.replace(/\bANNOUNCE_SKIP\b/gi, "");
+  out = out.replace(/\bQQ_AUTO_SKIP\b/gi, "");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
+
+function scrubLiteHistoryContext(input: string): string {
+  const cleaned = scrubLiteRouteNoise(input);
+  if (!cleaned) return "";
+  const lines = cleaned
+    .split("\n")
+    .map((it) => it.trim())
+    .filter((it) => it.length > 0)
+    .filter((it) => !/^<(system|history|inbound_media|inbound_media_manifest|voice_message)\b/i.test(it))
+    .filter((it) => !/^```/.test(it));
+  return lines.join("\n");
+}
+
 function isFallbackEligibleDropReason(reason: DeliveryDropReason): boolean {
   if (reason === "duplicate_text_suppressed") return false;
   if (reason === "abort_text_suppressed") return false;
@@ -914,7 +965,7 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
         };
       }
 
-      const route = String(config.proactiveDmRoute || "user:2151539153").trim();
+      const route = String(config.proactiveDmRoute || "").trim();
       if (!/^user:\d{5,12}$/.test(route)) {
         if (shouldLogProactiveSkip(proactiveVerbose, "invalid_route")) {
           console.log(`[QQ][qq_proactive_skip] account_id=${accountId} route=${route} skip_reason=invalid_route`);
@@ -1236,7 +1287,7 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             } = parsedInbound;
             const inboundTs = Date.now();
             setRouteLastInboundAt(account.accountId, inboundRoute, inboundTs);
-            const proactiveRoute = String((config as any).proactiveDmRoute || "user:2151539153").trim();
+            const proactiveRoute = String((config as any).proactiveDmRoute || "").trim();
             if ((config as any).proactiveDmEnabled === true && inboundRoute === proactiveRoute) {
               void persistProactiveState(account.accountId, inboundRoute, (config as any).proactiveDmLogVerbose === true);
             }
@@ -1429,7 +1480,13 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
                 maxMessageLength: config.maxMessageLength || 4000,
               });
               const strictAbortPattern = (config as any).outboundAbortPatternStrict !== false;
-              const filteredTextChunks = normalized.textChunks.filter((chunk) =>
+              const prefilteredChunks = normalized.textChunks
+                .map((chunk) => {
+                  const base = useLiteContext ? scrubLiteRouteNoise(chunk) : chunk;
+                  return String(base || "").trim();
+                })
+                .filter((chunk) => chunk.length > 0);
+              const filteredTextChunks = prefilteredChunks.filter((chunk) =>
                 strictAbortPattern ? !isAbortLeakText(chunk) : !isAbortLeakTextLoose(chunk),
               );
               if (normalized.textChunks.length > 0 && filteredTextChunks.length !== normalized.textChunks.length) {
@@ -1762,6 +1819,7 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
 
             const replySuffix = replyToBody ? `\n\n[Replying to ${replyToSender || "unknown"}]\n${replyToBody}\n[/Replying]` : "";
             let bodyWithReply = cleanCQCodes(text) + replySuffix;
+            const useLiteContext = routeUsesLiteContext(config, route);
 
             const sendBudget = await getRouteSendBudget(accountWorkspaceRoot, route);
             const mediaBlocked = sendBudget.mediaRemaining <= 0;
@@ -1771,8 +1829,13 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             const routeIsBusy = hasRouteInFlight(route);
             const routeRecentlyTimedOut = routeHadRecentTimeout(route, 2 * 60 * 1000);
             let effectiveHistoryContext = historyContext;
+            if (useLiteContext && historyContext) {
+              const cleanedHistory = scrubLiteHistoryContext(historyContext);
+              const lines = cleanedHistory.split("\n").filter((it) => String(it || "").trim().length > 0);
+              effectiveHistoryContext = lines.slice(-2).join("\n");
+            }
             if ((routeIsBusy || routeRecentlyTimedOut) && historyContext) {
-              const lines = historyContext.split("\n").filter((it) => String(it || "").trim().length > 0);
+              const lines = effectiveHistoryContext.split("\n").filter((it) => String(it || "").trim().length > 0);
               const degraded = Math.max(1, Math.floor((config.historyLimit ?? 5) / 2));
               effectiveHistoryContext = lines.slice(-degraded).join("\n");
             }
@@ -1787,6 +1850,7 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
               inboundTextClean,
               mediaRemaining: sendBudget.mediaRemaining,
               voiceRemaining: sendBudget.voiceRemaining,
+              compactMode: useLiteContext,
             });
             if (blockBuild.shouldHardBlockMediaIntent) {
               await deliver({ text: blockBuild.hardBlockMessage || "已触发权限上限，请联系管理员。" });
@@ -1794,10 +1858,14 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
             }
 
             bodyWithReply = blockBuild.systemBlock + bodyWithReply;
-            const routeInboundFilesDir = `${conversationBaseDir(account.accountId, route)}/in/files`;
-            bodyWithReply = `<system>QQ入站非文本兜底规则：当消息包含“[图片]/[语音消息]/[文件]”占位，且上下文未显式提供可用媒体URL/本地路径时，必须主动检查当前route的入站落盘目录（${routeInboundFilesDir}），优先读取最近3分钟内最新的1-3个文件进行判断；禁止读取其他route目录。</system>\n\n` + bodyWithReply;
+            if (!useLiteContext) {
+              const routeInboundFilesDir = `${conversationBaseDir(account.accountId, route)}/in/files`;
+              bodyWithReply = `<system>QQ入站非文本兜底规则：当消息包含“[图片]/[语音消息]/[文件]”占位，且上下文未显式提供可用媒体URL/本地路径时，必须主动检查当前route的入站落盘目录（${routeInboundFilesDir}），优先读取最近3分钟内最新的1-3个文件进行判断；禁止读取其他route目录。</system>\n\n` + bodyWithReply;
+            }
             const historyIncludeMedia = Boolean((config as any).historyIncludeMedia);
-            const historyMediaMaxItems = Math.max(1, Number((config as any).historyMediaMaxItems ?? 1));
+            const historyMediaMaxItems = useLiteContext
+              ? 1
+              : Math.max(1, Number((config as any).historyMediaMaxItems ?? 1));
             const recentMediaTtlMs = Math.max(1000, Number((config as any).recentInboundMediaTtlMs ?? 10 * 60 * 1000));
             const currentMsgManifest = getRouteMediaManifest(route, msgIdText, recentMediaTtlMs);
             const latestManifest = getRouteLatestMediaManifest(route, recentMediaTtlMs);
@@ -1823,13 +1891,22 @@ export const qqChannel: ChannelPlugin<ResolvedQQAccount> = {
               );
             }
 
-            const shouldAttachInboundMedia = historyIncludeMedia || attachLocalFinal.length > 0 || asksForMediaAnalysis;
+            const shouldAttachInboundMedia = useLiteContext
+              ? attachLocalFinal.length > 0
+              : (historyIncludeMedia || attachLocalFinal.length > 0 || asksForMediaAnalysis);
             if (shouldAttachInboundMedia && attachLocalFinal.length > 0) {
               const mediaHints = attachLocalFinal.slice(0, historyMediaMaxItems).map((u, i) => `[入站媒体#${i + 1}] ${u}`);
               bodyWithReply = `${bodyWithReply}\n\n<inbound_media>\n${mediaHints.join("\n")}\n</inbound_media>`;
             }
-            if (attachMediaFinal.length > 0 || attachLocalFinal.length > 0) {
+            if (!useLiteContext && (attachMediaFinal.length > 0 || attachLocalFinal.length > 0)) {
               bodyWithReply = `${bodyWithReply}\n\n<inbound_media_manifest msg_id=\"${msgIdText}\">\nmedia_urls=${attachMediaFinal.length}\nlocal_urls=${attachLocalFinal.length}\n</inbound_media_manifest>`;
+            }
+            bodyWithReply = scrubControlTokensForContext(bodyWithReply);
+            if (useLiteContext) {
+              bodyWithReply = scrubLiteRouteNoise(bodyWithReply);
+              console.log(
+                `[QQ][ctx-lite] route=${route} msgId=${msgIdText} prompt_chars=${bodyWithReply.length} history_lines=${effectiveHistoryContext ? effectiveHistoryContext.split("\n").filter(Boolean).length : 0} media_hints=${attachLocalFinal.length}`,
+              );
             }
 
             console.log(
