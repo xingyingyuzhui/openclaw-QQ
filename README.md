@@ -87,6 +87,17 @@ QQ 不是通过 scattered action strings 跑起来的。
 | Role Pack runtime | `packages/qq` 内置 | 人设、风格、关系、QQ 规则、能力索引 |
 | Management skills | [`skills/`](./skills) | 角色管理、关系管理、owner 管理、自动化配置 |
 
+## Capability matrix
+
+| Problem | qq plugin | automation manager | role pack | skills |
+|---|---|---|---|---|
+| route-bound agent entry | ✅ | ➖ | ➖ | ➖ |
+| text / media delivery | ✅ | ➖ | ➖ | ➖ |
+| schedule + smart skip | ➖ | ✅ | ✅ | ✅ |
+| persona / relationship consistency | ✅ | ✅ | ✅ | ✅ |
+| owner operations | ➖ | ➖ | ➖ | ✅ |
+| auditability and trace logs | ✅ | ✅ | ➖ | ➖ |
+
 ## Architecture
 
 ```mermaid
