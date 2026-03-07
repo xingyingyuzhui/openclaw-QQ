@@ -2,14 +2,17 @@
 
 OpenClaw QQ 生态插件仓库（Monorepo）。
 
-包含两个插件：
+这个仓库不只是一个 QQ 通道插件，而是一整套 QQ 运行层：
 - [`packages/qq`](./packages/qq)：QQ 通道插件（OneBot v11）
 - [`packages/qq-automation-manager`](./packages/qq-automation-manager)：QQ 自动化调度插件（只触发 agent，不旁路代发）
+- `Role Pack` 角色卡体系：内置在 `packages/qq` 中，用于 route 绑定 agent 的人格、风格、关系状态和 QQ 规则
+- [`skills/`](./skills)：配套技能集合，负责角色管理、关系管理、agent 管理、能力索引和自动化配置
 
 目标：
 - 让 OpenClaw 在 QQ 场景可稳定收发文本/媒体
 - 保证 route 会话隔离、可解释日志、可回归验证
 - 支持“配置驱动自动化触达”，不破坏主会话一致性
+- 支持“角色卡 + 中文命令 + skills”的长期管理模型
 
 ---
 
@@ -18,11 +21,15 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 ### 1.1 为什么拆成两个插件
 - `qq` 负责“消息通道”本身（入站、出站、媒体、会话、策略、日志）。
 - `qq-automation-manager` 负责“何时触发任务”。
+- `Role Pack` 负责“这个 QQ agent 是谁、怎么说话、当前关系状态如何变化”。
+- `skills/` 负责“人类或 agent 如何管理这套系统”。
 
 好处：
 - 消息链路与调度链路解耦，定位问题更快。
 - 自动化不会绕过通道发送，避免双轨会话。
 - 升级时只需替换插件，不改 OpenClaw core。
+- 角色卡与通道规则分层，避免 prompt 越堆越脏。
+- 管理能力通过 skills 暴露，不需要把 100 多个接口塞进 system prompt。
 
 ### 1.2 核心原则
 - route 是第一约束：`user:/group:/guild:` 严格隔离。
@@ -45,12 +52,24 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 
 ## 3. 功能清单
 
+### 3.0 仓库结构总览
+
+| 组件 | 位置 | 作用 |
+|---|---|---|
+| QQ 通道插件 | [`packages/qq`](./packages/qq) | 入站、出站、媒体、日志、会话隔离 |
+| 自动化插件 | [`packages/qq-automation-manager`](./packages/qq-automation-manager) | 按 route 调度 agent turn |
+| 角色卡机制 | [`packages/qq/src/services`](./packages/qq/src/services) | Role Pack、关系状态、上下文拼装、中文命令 |
+| 配套技能 | [`skills`](./skills) | 角色管理、关系管理、owner 控制台、自动化配置 |
+
 ### 3.1 [`packages/qq`](./packages/qq)（通道插件）
 - QQ 私聊/群聊/频道入站处理
 - 入站聚合、去重、调度保护
 - 文本/媒体出站统一队列 + 重试 + 抖动
 - 媒体解析与 materialize（含回退链）
 - route 会话隔离与 resident agent 绑定
+- Role Pack 角色包持久化与初始化
+- 关系状态持久化（affinity / trust / initiative）
+- 中文管理命令：`/角色`、`/好感度`、`/关系`、`/代理`
 - route 级策略/配额控制（文本/媒体/语音）
 - 可选轻量上下文模式（`liteContextRoutes`）用于压缩提示词噪音、降低本地模型 token 压力
 - 结构化链路日志（chat/trace/gateway）
@@ -60,7 +79,41 @@ OpenClaw QQ 生态插件仓库（Monorepo）。
 - 支持 `cron/every/at`
 - 触发 route 对应 agent 的 `agent turn`
 - 智能触发参数（沉默窗口、活跃窗口、随机间隔）
+- 读取 Role Pack 与 `relationship.json` 参与 skip/send 决策
 - 自动化状态落盘与可审计
+
+### 3.3 Role Pack（角色卡机制）
+Role Pack 不是单独插件，而是 `packages/qq` 内置能力。每个 QQ route 绑定 agent 的工作区中可包含：
+
+- `character/persona-core.json`
+- `character/style.md`
+- `character/examples.md`
+- `channel/qq-rules.md`
+- `channel/capabilities.md`
+- `runtime/relationship.json`
+- `runtime/preferences.json`
+- `runtime/role-pack.meta.json`
+
+作用：
+- 定义 agent 身份、人设、说话风格
+- 记录关系状态与偏好
+- 将 QQ 通道规则与角色本体分离
+- 为自动化和中文命令提供统一事实源
+
+### 3.4 配套 skills
+仓库内置以下 skills：
+
+- [`skills/qq-role-manager`](./skills/qq-role-manager)
+- [`skills/qq-relationship-manager`](./skills/qq-relationship-manager)
+- [`skills/qq-agent-admin`](./skills/qq-agent-admin)
+- [`skills/qq-owner-console`](./skills/qq-owner-console)
+- [`skills/qq-capability-index`](./skills/qq-capability-index)
+- [`skills/qq-automation-admin`](./skills/qq-automation-admin)
+
+这些 skills 的作用不是替代插件，而是：
+- 帮 agent 理解 QQ 体系能做什么
+- 暴露角色卡和关系状态的管理入口
+- 提供 owner/main 的跨 route 管理与自动化配置入口
 
 详细能力说明：[FEATURES_ZH.md](./FEATURES_ZH.md)
 
@@ -83,7 +136,8 @@ flowchart TD
 
 关键点：
 - 自动化链路进入同一 agent run，再由同一 qq 出站链路发送。
-- 因此会话、策略、配额、日志完全统一。
+- Role Pack 与关系状态在通道侧和自动化侧共用。
+- 因此会话、策略、配额、日志、角色状态都是统一事实源。
 
 ---
 
@@ -149,6 +203,8 @@ bash scripts/install.sh --openclaw-home "$HOME/.openclaw" --repo-path "$PWD"
 - `plugins.entries.qq.enabled=true`
 - `plugins.entries.qq-automation-manager.enabled=true`
 
+如需角色管理与 owner 运维能力，建议同时把仓库内的 [`skills`](./skills) 安装到 `${OPENCLAW_HOME}/workspace/skills/`。
+
 ### 6.3 重启与验证
 ```bash
 openclaw gateway restart
@@ -186,6 +242,13 @@ openclaw gateway restart
 bash scripts/verify.sh --openclaw-home "$OPENCLAW_HOME"
 ```
 7. 发送一条测试私聊消息，确认入站 + 出站。
+8. 如需角色管理能力，同步安装：
+   - `skills/qq-role-manager`
+   - `skills/qq-relationship-manager`
+   - `skills/qq-agent-admin`
+   - `skills/qq-owner-console`
+   - `skills/qq-capability-index`
+   - `skills/qq-automation-admin`
 
 ### 7.3 完成判定
 以下条件全部满足才算成功：
@@ -246,6 +309,25 @@ bash scripts/verify.sh --openclaw-home "$OPENCLAW_HOME"
   }
 }
 ```
+
+## 9. 角色卡与中文命令
+
+QQ route agent 默认支持：
+- `/角色 查看`
+- `/角色 模板`
+- `/角色 导入`
+- `/角色 重置`
+- `/好感度`
+- `/好感度 设置`
+- `/关系 查看`
+- `/关系 重置`
+- `/代理 查看`
+- `/代理 修复`
+
+这部分能力依赖 `packages/qq` 内置的 Role Pack 机制以及仓库内的管理 skills。
+
+如果你只装 `packages/qq`，角色卡运行时仍然生效；
+如果你把 [`skills`](./skills) 也装上，agent 与 owner 的管理能力才会完整。
 
 `channels.qq` 也可配置轻量上下文路由（适合本地模型）：
 

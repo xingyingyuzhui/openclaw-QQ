@@ -25,6 +25,13 @@ npm install @openclaw/qq @openclaw/qq-automation-manager
 3. Ensure plugin IDs exist in:
 - `plugins.allow`
 - `plugins.entries` and set `enabled=true`
+4. If you want full QQ management capability, also install the repo skills under `${OPENCLAW_HOME}/workspace/skills/`:
+- `qq-role-manager`
+- `qq-relationship-manager`
+- `qq-agent-admin`
+- `qq-owner-console`
+- `qq-capability-index`
+- `qq-automation-admin`
 
 ## Verify
 ```bash
@@ -41,6 +48,7 @@ Expected gateway log markers:
 - WS connect fails: verify host/port routing and token.
 - Media parsing unstable: ensure `messagePostFormat=array`.
 - Automation not firing: verify `targets[].enabled=true`, valid route, and schedule window.
+- Role Pack and relationship state are part of `packages/qq`, but operational management depends on the repo skills.
 - For target management workflow, use skill doc: `skills/qq-automation-admin/SKILL.md`.
 
 ## Rollback
