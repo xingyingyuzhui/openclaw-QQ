@@ -1,104 +1,119 @@
 # openclaw-QQ
 
-`openclaw-QQ` 不是一个“独立 QQ 机器人”仓库，而是一套围绕 [OpenClaw](https://github.com/openclaw/openclaw) 构建的 QQ 渠道基础设施。
+> A route-aware QQ channel stack for OpenClaw.
+>
+> 把 QQ 接入、会话绑定、角色状态、自动化和管理能力收敛到同一套运行模型里。
 
-它解决的核心问题不是“怎么接上 QQ”，而是：
-- 如何让 `user:/group:/guild:` 路由稳定绑定到 OpenClaw agent
-- 如何在 QQ 场景下保持会话隔离、角色一致性、自动化一致性
-- 如何把媒体链路、日志链路、权限边界和管理能力收敛到同一套系统里
+`openclaw-QQ` 关心的不是“把 QQ 接到大模型上”这一件小事。
+
+它真正解决的是另一类更难、也更容易被低估的问题：
+- 当一个渠道同时承载私聊、群聊、频道时，如何避免 route 串流
+- 当同一个用户长期对话时，如何让 agent、session、角色状态和自动化保持一致
+- 当媒体、文件、语音、自动化、权限控制都进来之后，如何不把系统写成一团不可维护的 bot 脚本
+
+这个仓库的答案是：把 QQ 看成 OpenClaw 的一个**长期运行渠道层**，而不是一次性聊天入口。
+
+## 为什么要这样设计
+
+很多“QQ + LLM”方案能很快跑起来，但会在同一批地方失控：
+- 消息发得出去，但 session 不稳定
+- 自动化能跑，但绕过主会话
+- 群聊和私聊都是数字 id，目标一猜错就串流
+- 媒体链路能 work once，却不可追踪、不可回归
+- 角色设定越加越多，最后全堆进 prompt，既费 token 又容易漂移
+
+`openclaw-QQ` 的设计重点就是把这些问题系统化拆开，然后重新收敛：
+- **QQ 通道插件** 负责消息、媒体、route、日志、策略、会话绑定
+- **自动化插件** 负责何时触发，不旁路发送
+- **Role Pack** 负责人格、风格、关系状态和 QQ 规则
+- **skills** 负责把整套系统的管理能力暴露给人类和 agent
+
+这四层共享同一套 route / agent / session 事实源，所以系统可以长期演化，而不是靠一堆 prompt patch 勉强维持。
+
+## 这套架构带来的结果
+
+### 1. Route 是一等公民
+每个 `user:/group:/guild:` 都可以被稳定地看作一个独立的 OpenClaw 入口。
+
+这意味着：
+- route 可以绑定固定 agent
+- route 有自己的会话事实源
+- route 可以携带自己的 Role Pack
+- route 可以被自动化安全调度
+
+### 2. 自动化不会破坏主会话
+自动化不是偷偷代发消息。
+
+它只做 route 判定和 agent 触发，真正的发送仍回到同一条 QQ 通道出站链路。
+
+所以：
+- 角色不分裂
+- 日志不分裂
+- 配额不分裂
+- 会话不分裂
+
+### 3. Role Pack 不是装饰，而是运行时状态
+在这套设计里，角色不是一段随手写的 prompt，而是一组结构化资产：
+- persona
+- style
+- examples
+- qq rules
+- capability index
+- relationship state
+- preferences
+
+这使得“角色一致性”变成系统能力，而不是运气。
+
+### 4. 渠道能力可追踪、可测试、可升级
+QQ 不是通过 scattered action strings 跑起来的。
+
+内部已经拆成：
+- NapCat transport
+- typed contracts
+- compatibility layer
+- services
+- inbound/outbound orchestration
+- state registries
+- structured logging
+
+所以这个仓库更像一套渠道基础设施，而不是一个 bot 脚本集合。
 
 ## 仓库包含什么
 
-- [`packages/qq`](./packages/qq)
-  - QQ 通道插件
-  - 负责入站、出站、媒体、路由绑定、会话隔离、策略/配额、Role Pack 落盘、中文命令
-- [`packages/qq-automation-manager`](./packages/qq-automation-manager)
-  - QQ 自动化插件
-  - 负责按 route 调度对应 agent 的任务，不旁路发送消息
-- [`skills/`](./skills)
-  - 一组围绕 QQ agent 运行体系的配套技能
-  - 包括角色管理、关系管理、owner 管理、能力索引、自动化配置
-
-## 为什么这套架构值得用
-
-### 1. 它是 OpenClaw-first，不是 QQ-bot-first
-很多 QQ 项目本质是“机器人接个大模型”。
-
-这套不是。
-
-这里的第一事实源是 OpenClaw：
-- agent
-- session
-- route
-- deliveryContext
-- automation
-- role pack
-
-QQ 只是一个高约束、可审计、可回归的渠道层。
-
-### 2. Route 绑定是系统级能力，不是 prompt 小技巧
-QQ 的难点不是收发文本，而是避免：
-- 群聊/私聊串流
-- 目标误判
-- 假 session
-- 假 agent
-- 自动化和主会话双轨运行
-
-这个仓库把这些问题收敛成固定模型：
-- `user:<qq>` -> 固定 agent
-- `group:<id>` -> 固定 agent
-- `guild:<g>:<c>` -> 固定 agent
-- owner 私聊 -> `main`
-
-### 3. 自动化不会绕过主链路
-`qq-automation-manager` 不是一个偷偷代发消息的定时器。
-
-它只做：
-- 调度
-- route 判定
-- 触发对应 agent
-- 记录状态
-
-真正的发消息仍然回到同一个 QQ 通道插件，所以：
-- 会话一致
-- 角色一致
-- 日志一致
-- 权限边界一致
-
-### 4. 角色卡机制是系统内建能力，不是额外贴 prompt
-Role Pack 不是一个附加噱头，而是 route agent 的稳定组成部分。
-
-它把这些东西分开管理：
-- 角色本体
-- 风格
-- 示例
-- QQ 通道规则
-- 能力索引
-- 关系状态
-- 偏好状态
-
-这比把所有设定塞进一个 system prompt 更稳，也更省 token。
-
-## 组件分层
-
-| 层 | 位置 | 作用 |
+| 组件 | 位置 | 作用 |
 |---|---|---|
-| 渠道层 | [`packages/qq`](./packages/qq) | QQ 入站/出站、媒体、路由、日志 |
-| 调度层 | [`packages/qq-automation-manager`](./packages/qq-automation-manager) | route 级自动化与触发 |
-| 角色层 | `packages/qq` 内置 Role Pack | 人设、关系、规则、能力索引 |
-| 管理层 | [`skills/`](./skills) | owner/agent 的操作入口 |
+| QQ channel plugin | [`packages/qq`](./packages/qq) | 入站、出站、媒体、route、日志、Role Pack 集成 |
+| Automation plugin | [`packages/qq-automation-manager`](./packages/qq-automation-manager) | route 级自动化触发与状态管理 |
+| Role Pack runtime | `packages/qq` 内置 | 人设、风格、关系、QQ 规则、能力索引 |
+| Management skills | [`skills/`](./skills) | 角色管理、关系管理、owner 管理、自动化配置 |
 
-## 适合什么场景
+## Architecture
 
-- 你已经在用 OpenClaw，希望把 QQ 变成稳定渠道
-- 你需要 route 绑定 agent，而不是一个全局大机器人
-- 你需要自动化，但不想破坏会话一致性
-- 你需要角色卡/关系状态/中文管理命令
-- 你需要可追踪日志和可回归的媒体链路
+```mermaid
+flowchart TD
+  A["QQ User / Group / Guild"] --> B["NapCat / OneBot v11"]
+  B --> C["packages/qq\nroute-aware channel layer"]
+  C --> D["route-bound OpenClaw agent"]
+  D --> E["Role Pack + relationship state"]
+  D --> F["packages/qq-automation-manager\nroute scheduler"]
+  D --> G["skills/\nmanagement surface"]
+  C --> H["trace / chat / gateway logs"]
+```
 
-## 快速开始
+## 适合谁
 
-1. 安装 NapCat 并打开 OneBot v11 Forward WebSocket
+这套仓库适合的是：
+- 已经在用 OpenClaw，希望把 QQ 变成稳定生产渠道的人
+- 需要 route 绑定 agent，而不是一个全局大机器人
+- 需要长期角色状态、自动化和中文管理能力的人
+- 在意媒体链路、日志、可回归性和维护成本的人
+
+如果你只是想要一个“能回消息的 QQ 机器人”，这套架构会比你需要的重。
+如果你想要一个能长期运行、能继续演化的 QQ 渠道层，这套设计会更合适。
+
+## Quick start
+
+1. 安装 NapCat 并开启 OneBot v11 Forward WebSocket
 2. 安装 [`packages/qq`](./packages/qq)
 3. 安装 [`packages/qq-automation-manager`](./packages/qq-automation-manager)
 4. 把 [`skills/`](./skills) 同步到 `${OPENCLAW_HOME}/workspace/skills/`
@@ -112,35 +127,24 @@ Role Pack 不是一个附加噱头，而是 route agent 的稳定组成部分。
 
 ## 推荐阅读顺序
 
-### 人类部署者
+### 对部署者
 1. [NAPCAT_SETUP.md](./NAPCAT_SETUP.md)
 2. [packages/qq/README.md](./packages/qq/README.md)
 3. [packages/qq-automation-manager/README.md](./packages/qq-automation-manager/README.md)
 4. [AGENTS.md](./AGENTS.md)
 
-### OpenClaw agent / 自动化安装器
+### 对 OpenClaw agent / 自动化安装器
 1. [AGENTS.md](./AGENTS.md)
 2. [openclaw.example.json](./openclaw.example.json)
 3. [skills/qq-capability-index/SKILL.md](./skills/qq-capability-index/SKILL.md)
 4. [skills/qq-automation-admin/SKILL.md](./skills/qq-automation-admin/SKILL.md)
 
-## 感谢与依赖
+## Thanks
 
-这个仓库建立在多个上游项目之上：
-
+这个仓库建立在以下项目之上：
 - [OpenClaw](https://github.com/openclaw/openclaw)
-  - 提供 agent、session、runtime、gateway、automation 等核心基础设施
 - [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
-  - 提供 QQ 协议侧与 OneBot 能力
 - [NapCat-Docker](https://github.com/NapNeko/NapCat-Docker)
-  - 提供稳定的容器部署方案
 - [OneBot v11](https://github.com/botuniverse/onebot-11)
-  - 提供标准化消息协议抽象
 
-感谢这些项目提供的能力边界和工程基础。
-
-## 当前仓库的定位
-
-一句话：
-
-**这是把 OpenClaw 认真带进 QQ 场景的一套工程化实现，而不是把 QQ 接口拼成一个聊天机器人。**
+感谢这些项目提供清晰边界和可靠基础能力。

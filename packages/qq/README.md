@@ -1,78 +1,57 @@
 # @openclaw/qq
 
-`@openclaw/qq` 是一个面向 [OpenClaw](https://github.com/openclaw/openclaw) 的 QQ 渠道插件，不是独立 bot 框架。
+> The QQ channel layer for OpenClaw.
+>
+> 负责把 QQ 变成一个 route-aware、role-aware、loggable 的 OpenClaw 渠道，而不是一个简单的消息进出适配器。
 
-它的职责是把 QQ 变成 OpenClaw 的一个高约束、可追踪、可维护的渠道层。
+## 它在解决什么问题
 
-## 设计目标
+QQ 接入大模型本身不难。
+真正困难的是把下面这些事情同时做对：
+- 私聊、群聊、频道 route 不串流
+- 每个 route 能稳定绑定 agent 和 session
+- 媒体、文件、语音不是 lucky path，而是可追踪链路
+- 中文管理命令、角色状态、自动化调度能共享同一套事实源
+- 系统不会把内部 planning / reasoning 泄漏给用户
 
-这个插件重点解决四件事：
+`@openclaw/qq` 就是为这些问题存在的。
 
-1. **route 绑定**
-- QQ 私聊、群聊、频道要稳定映射到固定 agent / 固定会话语义
+## 核心观念
 
-2. **媒体稳定性**
-- 图片、语音、文件不能只靠一次 lucky path
-- 要有候选链、fallback、原因码、日志闭环
+### Route before message
+这个包首先处理 route，然后才处理消息。
 
-3. **运行时边界**
-- 不允许跨 route 串流
-- 不允许裸数字目标猜测 user/group
-- 不允许内部思考直接泄漏到用户侧
+消息只是事件，route 才是长期状态的边界。
 
-4. **OpenClaw 深度结合**
-- 会话
-- agent 绑定
-- Role Pack
-- deliveryContext
-- 自动化触发
-- 中文管理命令
-都必须和 OpenClaw 主体系一致
+### Delivery must be deterministic
+出站不是“能发出去就行”，而是：
+- 发回哪个 route
+- 用什么候选链发送媒体
+- 失败如何记录
+- 哪些文本必须拦截
+都要可解释。
 
-## 这不是一个“QQ 机器人插件”
+### Role Pack belongs to runtime, not to a giant prompt
+角色卡在这里不是一个附属文件，而是 route-bound runtime state。
 
-如果你的理解是：
-- 收消息
-- 调 LLM
-- 发回去
+它与会话、关系、策略、中文命令一起工作，而不是躺在文档里供人欣赏。
 
-那只理解了最表层。
+## 你会得到什么
 
-这个包真正做的是：
-- 构建 `QQ route -> OpenClaw agent -> OpenClaw session -> QQ delivery` 的稳定映射
-- 让 QQ 成为 OpenClaw 内部系统的一部分，而不是外挂入口
+### Route-aware channel runtime
+- `user:<qq>` / `group:<id>` / `guild:<g>:<c>` route 支持
+- resident agent 绑定
+- owner -> `main` 特例支持
+- route metadata 与 session store 收敛
 
-## 核心能力
-
-### 1. 路由与会话模型
-支持：
-- `user:<qq>`
-- `group:<groupId>`
-- `guild:<guildId>:<channelId>`
-
-原则：
-- 每个 route 独立隔离
-- owner 私聊可绑定 `main`
-- 其它 route 默认绑定各自 resident agent
-- 所有出站默认回原 route
-
-### 2. 入站链路
-- NapCat / OneBot 事件接入
-- 消息归一化
-- route 判定
+### Structured inbound / outbound pipeline
+- 入站规范化
 - 聚合与去重
-- 调度保护（queue-latest / adaptive 等）
-- session 写入与上下文组装
+- 调度保护与状态机
+- 文本/媒体统一发送队列
+- 媒体 materialize 和 fallback
 
-### 3. 出站链路
-- 文本与媒体统一发送队列
-- 重试与抖动
-- fallback 与 drop reason
-- `MEDIA:` 路径解析
-- 媒体候选构建与 materialize
-
-### 4. Role Pack 内建支持
-每个 QQ route agent 都可以绑定：
+### Role Pack runtime
 - `persona-core.json`
 - `style.md`
 - `examples.md`
@@ -82,31 +61,17 @@
 - `preferences.json`
 - `role-pack.meta.json`
 
-这让 QQ agent 具备：
-- 稳定人设
-- 风格一致性
-- 关系状态
-- 中文管理命令支撑
-
-### 5. 中文命令
-内置支持：
-- `/角色 查看`
-- `/角色 模板`
-- `/角色 导入`
-- `/角色 重置`
+### Chinese-first operations
+- `/角色`
 - `/好感度`
-- `/好感度 设置`
-- `/关系 查看`
-- `/关系 重置`
-- `/代理 查看`
-- `/代理 修复`
+- `/关系`
+- `/代理`
 
-这些命令不是玩具命令，而是 QQ route agent 管理面的正式入口。
+## Architecture
 
-## 架构特点
+这个包不是单文件中心化实现。
 
-### 分层而不是大文件堆逻辑
-当前插件不是把所有逻辑塞进一个 `channel.ts`，而是分成：
+内部已经分成：
 - `services/`
 - `state/`
 - `inbound/`
@@ -116,39 +81,18 @@
 - `napcat/compat`
 - `diagnostics/`
 
-这样做的意义是：
-- NapCat 契约与业务逻辑解耦
-- route 状态与业务行为解耦
-- 出站、入站、自动化协作点可测试
+这使它具备三个重要特征：
+1. 协议层和业务层分离
+2. 运行态状态显式注册，而不是散落在大文件里
+3. 关键链路可以单测和回归
 
-### NapCat 强类型契约
-NapCat 动作不是 scattered string calls。
-
-插件内部通过：
-- typed action contracts
-- compatibility fallback
-- structured invoke trace
-来保证：
-- 升级可控
-- 失败可解释
-- 覆盖率可检查
-
-### 日志是第一等能力
-这个包不是“出问题再加日志”。
-
-默认就有：
-- chat log
-- trace log
-- gateway log
-- NapCat action lifecycle log
-
-排障入口见：
-- [LOGGING.md](./LOGGING.md)
+更细节的模块关系看：
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [LOGGING.md](./LOGGING.md)
 
 ## 与 OpenClaw 的结合点
 
-这个插件依赖 OpenClaw 的核心概念，而不是绕开它们：
+这个包依赖并强化 OpenClaw 的核心概念：
 - agent
 - session
 - runtime
@@ -157,62 +101,50 @@ NapCat 动作不是 scattered string calls。
 - automation
 - workspace
 
-所以它的价值不只是“QQ 接上了”，而是：
-- QQ 成为了 OpenClaw 原生渠道的一部分
-- route agent 可以拥有自己的规则、角色、自动化和记忆
+因此它的价值不是“给 QQ 发消息”，而是让 QQ 成为 OpenClaw 的原生渠道之一。
+
+## 与其它组件的关系
+
+### 与 `@openclaw/qq-automation-manager`
+- `@openclaw/qq` 负责渠道层
+- `@openclaw/qq-automation-manager` 负责 route 调度层
+- 两者共享 Role Pack、route 绑定和日志事实源
+
+### 与 `skills/`
+插件提供运行时能力，skills 提供管理面。
+
+如果你只安装这个包，QQ route 依然能运行。
+如果你把仓库里的 skills 一起装上，owner 与 agent 才能完整使用角色、关系和自动化管理能力。
 
 ## 前置条件
 
-### OpenClaw
-- 推荐 `>= 2026.2.26`
+需要一个能稳定提供 OneBot v11 Forward WebSocket 的 QQ 协议侧。
+本仓库推荐：
+- [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
+- [NapCat-Docker](https://github.com/NapNeko/NapCat-Docker)
 
-### NapCat / OneBot
-必须满足：
-- OneBot v11 Forward WebSocket
+关键要求：
 - `messagePostFormat = array`
-- token 与 `channels.qq.accessToken` 一致
+- token 与 `channels.qq.accessToken` 保持一致
 
-这部分是渠道接入前提，不是仓库主角。
-详细看：
+部署细节见：
 - [../../NAPCAT_SETUP.md](../../NAPCAT_SETUP.md)
 
-## 安装
+## 安装与配置
 
-从仓库根目录：
+从仓库根目录执行：
 
 ```bash
 bash scripts/install.sh --openclaw-home "$HOME/.openclaw" --repo-path "$PWD"
 ```
 
-如果只开发这个包，也可以单独同步到 `${OPENCLAW_HOME}/extensions/qq`。
-
-## 配置
-
-在 `openclaw.json` 中至少设置：
+配置至少包括：
 - `channels.qq.wsUrl`
 - `channels.qq.accessToken`
 - `channels.qq.ownerUserId`（可选）
 
-并确保：
-- `plugins.allow` 包含 `qq`
-- `plugins.entries.qq.enabled = true`
-
-完整示例见：
+完整例子见：
 - [../../openclaw.example.json](../../openclaw.example.json)
-
-## 与 skills 的关系
-
-这个包本身已经包含：
-- 角色卡机制
-- 关系状态
-- 中文命令
-
-但如果你想让人类或 agent 方便管理这套能力，还应该一起安装：
-- [../../skills/qq-role-manager](../../skills/qq-role-manager)
-- [../../skills/qq-relationship-manager](../../skills/qq-relationship-manager)
-- [../../skills/qq-agent-admin](../../skills/qq-agent-admin)
-- [../../skills/qq-owner-console](../../skills/qq-owner-console)
-- [../../skills/qq-capability-index](../../skills/qq-capability-index)
 
 ## 校验
 
@@ -220,19 +152,17 @@ bash scripts/install.sh --openclaw-home "$HOME/.openclaw" --repo-path "$PWD"
 pnpm run check
 ```
 
-当前校验包括：
+包含：
 - architecture check
 - typecheck
-- NapCat contract verification
+- contract verification
 - service coverage verification
 - unit tests
 
-## 感谢
+## Thanks
 
-这个包站在以下项目之上：
+感谢以下项目：
 - [OpenClaw](https://github.com/openclaw/openclaw)
 - [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
 - [NapCat-Docker](https://github.com/NapNeko/NapCat-Docker)
 - [OneBot v11](https://github.com/botuniverse/onebot-11)
-
-感谢这些项目提供稳定边界和基础能力。
