@@ -111,6 +111,37 @@ flowchart TD
   C --> H["trace / chat / gateway logs"]
 ```
 
+## System map
+
+```mermaid
+flowchart LR
+  U["QQ messages"] --> N["NapCat / OneBot"]
+  N --> Q["@openclaw/qq"]
+  Q --> S["route + session binding"]
+  S --> A["OpenClaw agent"]
+  A --> R["Role Pack runtime"]
+  A --> O["Outbound queue"]
+  O --> N
+  M["@openclaw/qq-automation-manager"] --> A
+  K["skills/*"] --> A
+  K --> M
+  Q --> L["trace / chat / gateway logs"]
+  M --> L
+```
+
+## Layer responsibilities
+
+| Layer | Owns | Why it exists |
+|---|---|---|
+| Protocol | NapCat / OneBot | Connects QQ to a standard event stream |
+| Channel runtime | `@openclaw/qq` | Normalizes events, binds route, sends text/media, enforces boundaries |
+| Agent runtime | OpenClaw | Runs the bound agent with session context and delivery context |
+| Role runtime | Role Pack | Keeps persona, relationship state, QQ rules and capability index stable |
+| Automation runtime | `@openclaw/qq-automation-manager` | Decides when a route agent should be triggered |
+| Management surface | `skills/*` | Exposes operations to humans and agents without bloating prompts |
+| Observability | logs / traces | Makes failures diagnosable and behavior auditable |
+```
+
 ## 适合谁
 
 这套仓库适合的是：
