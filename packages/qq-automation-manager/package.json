@@ -3,11 +3,18 @@
   "version": "1.0.0",
   "type": "module",
   "description": "QQ automation manager with internal route scheduler",
-  "license": "Apache-2.0",
   "openclaw": {
     "extensions": [
       "./index.ts"
     ]
+  },
+  "scripts": {
+    "lint": "node ./scripts/check-architecture.mjs",
+    "typecheck": "tsc --noEmit --skipLibCheck --module NodeNext --moduleResolution NodeNext --target ES2022 ./types/openclaw-plugin-sdk.d.ts ./index.ts ./src/service.ts",
+    "build:test": "rm -rf ./.test-dist && tsc -p ./tsconfig.test.json",
+    "test:unit": "node --test ./tests/*.test.mjs",
+    "test": "pnpm run build:test && pnpm run test:unit",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test"
   },
   "dependencies": {
     "zod": "^4.3.6"

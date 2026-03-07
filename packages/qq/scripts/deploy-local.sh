@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 DEST_DIR="${OPENCLAW_HOME}/extensions/qq"
 
-mkdir -p "${OPENCLAW_HOME}/extensions"
-rm -rf "${DEST_DIR}"
-cp -R "${SRC_DIR}" "${DEST_DIR}"
+echo "[qq-deploy] source: $SRC_DIR"
+echo "[qq-deploy] dest  : $DEST_DIR"
 
-echo "[qq-deploy] deployed to ${DEST_DIR}"
-echo "[qq-deploy] restart gateway: openclaw gateway restart"
+mkdir -p "$DEST_DIR"
+
+# Sync code but keep destination node_modules out of rsync delete scope
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude 'node_modules' \
+  "$SRC_DIR/" "$DEST_DIR/"
+
+cd "$DEST_DIR"
+echo "[qq-deploy] installing runtime deps..."
+npm install --omit=dev
+
+echo "[qq-deploy] done. next: openclaw gateway restart"

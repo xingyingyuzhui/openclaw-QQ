@@ -11,6 +11,12 @@ import {
 } from "../media.js";
 import { logInboundMediaTrace } from "../diagnostics/logger.js";
 import type { InboundMediaRef, InboundResolveResult, MaterializeResult } from "../types/media.js";
+import {
+  getForwardMessage,
+  getGroupMemberInfo,
+  getGroupMessageHistory,
+  getMessage,
+} from "../services/message-service.js";
 
 function decodeCqValue(v: string): string {
   return String(v || "")
@@ -146,16 +152,36 @@ export async function parseInboundMessage(params: {
     let resolveErrorCode = "";
     try {
       if (ref.segmentType === "image") {
-        resolvedSource = await resolveImageMediaSource(client, ref.data || {}, { prefer: inboundMediaResolvePrefer, useStream });
+        resolvedSource = await resolveImageMediaSource(client, ref.data || {}, {
+          prefer: inboundMediaResolvePrefer,
+          useStream,
+          route: inboundRoute,
+          msgId: msgIdText,
+        });
         resolveAction = "get_image_chain";
       } else if (ref.segmentType === "video") {
-        resolvedSource = await resolveVideoMediaSource(client, ref.data || {}, { prefer: inboundMediaResolvePrefer, useStream });
+        resolvedSource = await resolveVideoMediaSource(client, ref.data || {}, {
+          prefer: inboundMediaResolvePrefer,
+          useStream,
+          route: inboundRoute,
+          msgId: msgIdText,
+        });
         resolveAction = "video_chain";
       } else if (ref.segmentType === "record") {
-        resolvedSource = await resolveRecordMediaSource(client, ref.data || {}, { prefer: inboundMediaResolvePrefer, useStream });
+        resolvedSource = await resolveRecordMediaSource(client, ref.data || {}, {
+          prefer: inboundMediaResolvePrefer,
+          useStream,
+          route: inboundRoute,
+          msgId: msgIdText,
+        });
         resolveAction = "get_record_chain";
       } else if (ref.segmentType === "file") {
-        resolvedSource = await resolveFileMediaSource(client, ref.data || {}, isGroup, groupId, { prefer: inboundMediaResolvePrefer, useStream });
+        resolvedSource = await resolveFileMediaSource(client, ref.data || {}, isGroup, groupId, {
+          prefer: inboundMediaResolvePrefer,
+          useStream,
+          route: inboundRoute,
+          msgId: msgIdText,
+        });
         resolveAction = isGroup ? "group_file_chain" : "private_file_chain";
       }
     } catch (err: any) {
@@ -189,7 +215,12 @@ export async function parseInboundMessage(params: {
           if (cached) name = cached;
           else {
             try {
-              const info = await (client as any).sendWithResponse("get_group_member_info", { group_id: groupId, user_id: name });
+              const info = await getGroupMemberInfo(client, groupId, name, {
+                route: inboundRoute,
+                msgId: msgIdText,
+                source: "inbound",
+                stage: "resolve_member_name",
+              });
               name = info?.card || info?.nickname || name;
               setCachedMemberName(String(groupId), String(segAny.data.qq), name);
             } catch (err: any) {
@@ -213,7 +244,12 @@ export async function parseInboundMessage(params: {
         resolvedText += " [卡片消息]";
       } else if (segAny.type === "forward" && segAny.data?.id) {
         try {
-          const forwardData = await client.getForwardMsg(segAny.data.id);
+          const forwardData = await getForwardMessage(client, segAny.data.id, {
+            route: inboundRoute,
+            msgId: msgIdText,
+            source: "inbound",
+            stage: "resolve_forward_message",
+          });
           if (forwardData?.messages) {
             resolvedText += "\n[转发聊天记录]:";
             for (const m of forwardData.messages.slice(0, 10)) {
@@ -284,7 +320,12 @@ export async function parseInboundMessage(params: {
       console.warn(
         `[QQ][inbound-media] fallback_get_msg route=${inboundRoute} msgId=${String(event.message_id)} unresolved=${unresolvedIndexes.length}`,
       );
-      const fullMsg = await client.getMsg(event.message_id);
+      const fullMsg = await getMessage(client, event.message_id, {
+        route: inboundRoute,
+        msgId: msgIdText,
+        source: "inbound",
+        stage: "fallback_get_msg",
+      });
       const fullSegments = Array.isArray(fullMsg?.message) ? fullMsg.message : [];
       const pools: Record<InboundMediaRef["segmentType"], any[]> = { image: [], video: [], record: [], file: [] };
       for (const seg of fullSegments) {
@@ -452,7 +493,11 @@ export async function buildGroupHistoryContext(params: {
   const { isGroup, historyLimit, groupId, client } = params;
   if (!isGroup || historyLimit === 0 || !groupId) return "";
   try {
-    const history = await client.getGroupMsgHistory(groupId);
+    const history = await getGroupMessageHistory(client, groupId, {
+      route: `group:${String(groupId)}`,
+      source: "inbound",
+      stage: "load_group_history",
+    });
     if (!history?.messages) return "";
     const limit = historyLimit || 5;
     return history.messages

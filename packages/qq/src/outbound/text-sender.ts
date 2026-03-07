@@ -4,7 +4,7 @@ import type { QQConfig } from "../config.js";
 export async function sendTextChunks(params: {
   chunks: string[];
   targetKind: "user" | "group" | "guild";
-  userId: number;
+  userId: number | string;
   enqueue: (fn: () => Promise<void>) => Promise<void>;
   sendTextChunk: (chunk: string) => Promise<boolean | void>;
   onChunkSent: (chunk: string) => Promise<void>;

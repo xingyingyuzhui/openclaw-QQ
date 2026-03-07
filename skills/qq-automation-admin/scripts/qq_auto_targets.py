@@ -1,33 +1,24 @@
 #!/usr/bin/env python3
 import argparse
 import json
+from copy import deepcopy
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw")))
+WORKSPACE_ROOT = OPENCLAW_HOME / "workspace"
+CONFIG_PATH = OPENCLAW_HOME / "openclaw.json"
 PLUGIN_ID = "qq-automation-manager"
 
 
-def resolve_openclaw_home(cli_home: str) -> Path:
-    if cli_home:
-        return Path(cli_home).expanduser()
-    env_home = Path.home() / ".openclaw"
-    return env_home
-
-
-def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
-    home = resolve_openclaw_home(args.openclaw_home)
-    cfg_path = Path(args.config).expanduser() if args.config else home / "openclaw.json"
-    ws_root = Path(args.workspace_root).expanduser() if args.workspace_root else home / "workspace"
-    return cfg_path, ws_root
-
-
-def load_config(config_path: Path) -> Dict[str, Any]:
-    raw = config_path.read_text(encoding="utf-8")
+def load_config() -> Dict[str, Any]:
+    raw = CONFIG_PATH.read_text(encoding="utf-8")
     return json.loads(raw)
 
 
-def save_config(config_path: Path, cfg: Dict[str, Any]) -> None:
-    config_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+def save_config(cfg: Dict[str, Any]) -> None:
+    CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def ensure_manager_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,20 +33,19 @@ def ensure_manager_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     manager_cfg.setdefault("reconcileOnStartup", True)
     manager_cfg.setdefault("reconcileIntervalMs", 120000)
     manager_cfg.setdefault("pruneOrphans", False)
-    manager_cfg.setdefault("strictAgentOnly", True)
     manager_cfg.setdefault("targets", [])
     if not isinstance(manager_cfg["targets"], list):
         manager_cfg["targets"] = []
     return manager_cfg
 
 
+def route_to_default_id(route: str) -> str:
+    return route.replace(":", "-")
+
+
 def validate_route(route: str) -> None:
     if not route.startswith(("user:", "group:", "guild:")):
         raise SystemExit(f"invalid route: {route}")
-
-
-def route_to_default_id(route: str) -> str:
-    return route.replace(":", "-")
 
 
 def build_target(args: argparse.Namespace) -> Dict[str, Any]:
@@ -92,13 +82,14 @@ def list_targets(targets: List[Dict[str, Any]]) -> None:
     rows = []
     for t in targets:
         schedule = (t.get("job", {}).get("schedule", {}) or {}).get("expr", "")
+        enabled = bool(t.get("enabled", False))
+        route = t.get("route", "")
         rows.append(
             {
                 "id": t.get("id", ""),
-                "enabled": bool(t.get("enabled", False)),
-                "route": t.get("route", ""),
+                "enabled": enabled,
+                "route": route,
                 "cron": schedule,
-                "executionMode": t.get("executionMode", ""),
             }
         )
     print(json.dumps({"targets": rows}, ensure_ascii=False, indent=2))
@@ -153,13 +144,13 @@ def audit_targets(targets: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"ok": len(issues) == 0, "issues": issues}
 
 
-def route_meta_dir(workspace_root: Path, route: str) -> Path:
-    direct = workspace_root / "qq_sessions" / route / "meta"
-    normalized = workspace_root / "qq_sessions" / route.replace(":", "__") / "meta"
+def route_meta_dir(route: str) -> Path:
+    direct = WORKSPACE_ROOT / "qq_sessions" / route / "meta"
+    normalized = WORKSPACE_ROOT / "qq_sessions" / route.replace(":", "__") / "meta"
     return direct if direct.exists() else normalized
 
 
-def verify_target(targets: List[Dict[str, Any]], workspace_root: Path, target_id: str = "", route: str = "") -> Dict[str, Any]:
+def verify_target(targets: List[Dict[str, Any]], target_id: str = "", route: str = "") -> Dict[str, Any]:
     selected = None
     if target_id:
         selected = next((t for t in targets if str(t.get("id", "")) == target_id), None)
@@ -172,7 +163,7 @@ def verify_target(targets: List[Dict[str, Any]], workspace_root: Path, target_id
         return {"ok": False, "error": "target_not_found", "target_id": target_id, "route": route}
 
     s = selected.get("job", {}).get("schedule", {}) or {}
-    meta = route_meta_dir(workspace_root, str(selected.get("route", "")))
+    meta = route_meta_dir(str(selected.get("route", "")))
     latest = meta / "automation-latest.json"
     ndjson = meta / "automation-state.ndjson"
 
@@ -185,10 +176,7 @@ def verify_target(targets: List[Dict[str, Any]], workspace_root: Path, target_id
             required = {"triggered", "produced", "skipped", "sent_by_channel", "trace"}
             latest_ok = True
             latest_fields_ok = required.issubset(set(payload.keys()))
-            latest_preview = {
-                k: payload.get(k)
-                for k in ["ts", "target_id", "triggered", "produced", "skipped", "sent_by_channel", "trace"]
-            }
+            latest_preview = {k: payload.get(k) for k in ["ts", "target_id", "triggered", "produced", "skipped", "sent_by_channel", "trace"]}
         except Exception:
             latest_ok = False
 
@@ -215,17 +203,12 @@ def verify_target(targets: List[Dict[str, Any]], workspace_root: Path, target_id
 
 
 def main() -> None:
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--openclaw-home", default="", help="OpenClaw home dir (default: ~/.openclaw)")
-    common.add_argument("--config", default="", help="Explicit openclaw.json path")
-    common.add_argument("--workspace-root", default="", help="Explicit workspace root (for verify)")
-
     parser = argparse.ArgumentParser(description="Manage qq-automation-manager targets in openclaw.json")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("list", parents=[common])
+    sub.add_parser("list")
 
-    upsert = sub.add_parser("upsert", parents=[common])
+    upsert = sub.add_parser("upsert")
     upsert.add_argument("--id", default="")
     upsert.add_argument("--route", required=True)
     upsert.add_argument("--cron", required=True, help='e.g. "*/30 9-22 * * 1-5"')
@@ -240,23 +223,21 @@ def main() -> None:
     upsert.add_argument("--random-max", type=int, default=60)
     upsert.add_argument("--max-chars", type=int, default=36)
 
-    disable = sub.add_parser("disable", parents=[common])
+    disable = sub.add_parser("disable")
     disable.add_argument("--id", required=True)
 
-    remove = sub.add_parser("remove", parents=[common])
+    remove = sub.add_parser("remove")
     remove.add_argument("--id", required=True)
 
-    sub.add_parser("migrate-agent-only", parents=[common])
-    sub.add_parser("audit", parents=[common])
-
-    verify = sub.add_parser("verify", parents=[common])
+    sub.add_parser("migrate-agent-only")
+    sub.add_parser("audit")
+    verify = sub.add_parser("verify")
     verify.add_argument("--id", default="")
     verify.add_argument("--route", default="")
 
     args = parser.parse_args()
-    config_path, workspace_root = resolve_paths(args)
-
-    cfg = load_config(config_path)
+    cfg = load_config()
+    original = deepcopy(cfg)
     manager_cfg = ensure_manager_config(cfg)
     targets = manager_cfg["targets"]
 
@@ -270,12 +251,12 @@ def main() -> None:
 
     if args.cmd == "migrate-agent-only":
         changed = migrate_agent_only(targets)
-        save_config(config_path, cfg)
+        save_config(cfg)
         print(json.dumps({"ok": True, "action": "migrated", "changed": changed}, ensure_ascii=False))
         return
 
     if args.cmd == "verify":
-        print(json.dumps(verify_target(targets, workspace_root, target_id=args.id, route=args.route), ensure_ascii=False, indent=2))
+        print(json.dumps(verify_target(targets, target_id=args.id, route=args.route), ensure_ascii=False, indent=2))
         return
 
     if args.cmd == "upsert":
@@ -283,7 +264,7 @@ def main() -> None:
             raise SystemExit("--random-max must be >= --random-min")
         target = build_target(args)
         action = upsert_target(targets, target)
-        save_config(config_path, cfg)
+        save_config(cfg)
         print(json.dumps({"ok": True, "action": action, "id": target["id"], "route": target["route"]}, ensure_ascii=False))
         return
 
@@ -291,7 +272,7 @@ def main() -> None:
         ok = disable_target(targets, args.id)
         if not ok:
             raise SystemExit(f"target not found: {args.id}")
-        save_config(config_path, cfg)
+        save_config(cfg)
         print(json.dumps({"ok": True, "action": "disabled", "id": args.id}, ensure_ascii=False))
         return
 
@@ -299,9 +280,12 @@ def main() -> None:
         ok = remove_target(targets, args.id)
         if not ok:
             raise SystemExit(f"target not found: {args.id}")
-        save_config(config_path, cfg)
+        save_config(cfg)
         print(json.dumps({"ok": True, "action": "removed", "id": args.id}, ensure_ascii=False))
         return
+
+    if cfg != original:
+        save_config(cfg)
 
 
 if __name__ == "__main__":

@@ -107,7 +107,11 @@ export async function sendMediaItems(params: {
 
     let streamCandidate: string | null = null;
     if (streamClient && config.streamTransportEnabled !== false && !isHttpLike(persistedPath) && !isBase64Like(persistedPath) && !isDataUriLike(persistedPath)) {
-      streamCandidate = await uploadFileStreamIfAvailable(streamClient, persistedPath, config);
+      streamCandidate = await uploadFileStreamIfAvailable(streamClient, persistedPath, config, {
+        route,
+        source: "chat",
+        stage: "outbound-media-stream",
+      });
       if (streamCandidate) {
         logMediaTrace({ route, media_source: mediaPath, media_kind: kind, candidate_type: "stream", fallback_stage: "stream" });
       }

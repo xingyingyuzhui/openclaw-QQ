@@ -16,7 +16,12 @@ export type QQLogEvent =
   | "qq_proactive_tick"
   | "qq_proactive_skip"
   | "qq_proactive_send"
-  | "qq_proactive_state";
+  | "qq_proactive_state"
+  | "napcat_action_start"
+  | "napcat_action_success"
+  | "napcat_action_fallback"
+  | "napcat_action_failed"
+  | "napcat_action_unsupported";
 
 export type QQErrorCode =
   | "resolve_action_failed"

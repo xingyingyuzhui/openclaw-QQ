@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "description": "OpenClaw QQ channel plugin via OneBot v11",
-  "license": "Apache-2.0",
   "bin": {
     "openclaw-qq-onboard": "./bin/onboard.js"
   },
@@ -13,7 +12,16 @@
     ]
   },
   "scripts": {
-    "deploy:local": "bash ./scripts/deploy-local.sh"
+    "deploy:local": "bash ./scripts/deploy-local.sh",
+    "generate:contracts": "node ./scripts/generate-napcat-contracts.mjs",
+    "verify:contracts": "node ./scripts/verify-napcat-contracts.mjs",
+    "verify:services": "node ./scripts/verify-service-coverage.mjs",
+    "build:test": "rm -rf ./.test-dist && tsc -p ./tsconfig.test.json",
+    "lint": "node ./scripts/check-architecture.mjs",
+    "typecheck": "tsc --noEmit --skipLibCheck --module NodeNext --moduleResolution NodeNext --target ES2022 ./types/openclaw-plugin-sdk.d.ts ./index.ts ./src/channel.ts ./src/client.ts ./src/inbound/inbound-orchestrator.ts",
+    "test:unit": "node --test ./tests/*.test.mjs",
+    "test": "pnpm run verify:contracts && pnpm run verify:services && pnpm run build:test && pnpm run test:unit",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test"
   },
   "dependencies": {
     "ws": "^8.18.0",

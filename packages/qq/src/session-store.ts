@@ -3,6 +3,7 @@ import path from "node:path";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import type { getQQRuntime } from "./runtime.js";
 import {
+  buildResidentSessionKey,
   OWNER_MAIN_AGENT_ID,
   getOwnerQq,
   isOwnerPrivateRoute,
@@ -28,6 +29,10 @@ export type QQRouteAgentMetadata = {
   accountId: string;
   createdAt: string;
   updatedAt: string;
+  rolePackVersion?: number;
+  roleTemplateId?: string;
+  relationshipStatePath?: string;
+  rolePackSource?: "default" | "imported" | "owner-customized" | "migrated";
   boundToMain?: boolean;
   orchestrationMode?: "dispatcher-first";
   dispatcherRules?: {
@@ -64,10 +69,6 @@ export type QQProactiveState = {
 
 const IMAGE_QUOTA_WINDOW_MS = 2 * 60 * 60 * 1000;
 const IMAGE_QUOTA_MAX = 5;
-
-function currentOwnerQq(): string {
-  return String(getOwnerQq() || "").trim();
-}
 
 function logMigrationEvent(
   event: "qq_session_migrate_start" | "qq_session_migrate_move" | "qq_session_migrate_done",
@@ -339,6 +340,10 @@ export async function readRouteAgentMetadata(workspace: string, route: string): 
       accountId: String(parsed.accountId || DEFAULT_ACCOUNT_ID),
       createdAt: String(parsed.createdAt || new Date().toISOString()),
       updatedAt: String(parsed.updatedAt || new Date().toISOString()),
+      rolePackVersion: Number(parsed.rolePackVersion || 0) || undefined,
+      roleTemplateId: parsed?.roleTemplateId ? String(parsed.roleTemplateId) : undefined,
+      relationshipStatePath: parsed?.relationshipStatePath ? String(parsed.relationshipStatePath) : undefined,
+      rolePackSource: parsed?.rolePackSource ? String(parsed.rolePackSource) as QQRouteAgentMetadata["rolePackSource"] : undefined,
       boundToMain: shouldBindToMain || undefined,
       orchestrationMode: "dispatcher-first",
       dispatcherRules: {
@@ -375,6 +380,10 @@ export async function writeRouteCapabilityPolicy(workspace: string, route: strin
     accountId: existing?.accountId || DEFAULT_ACCOUNT_ID,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
+    rolePackVersion: existing?.rolePackVersion,
+    roleTemplateId: existing?.roleTemplateId,
+    relationshipStatePath: existing?.relationshipStatePath,
+    rolePackSource: existing?.rolePackSource,
     boundToMain: ownerRoute ? true : (existing?.boundToMain || undefined),
     orchestrationMode: "dispatcher-first",
     dispatcherRules: {
@@ -399,6 +408,10 @@ export async function ensureRouteAgentMetadata(workspace: string, route: string,
     accountId: existing?.accountId || accountId || DEFAULT_ACCOUNT_ID,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
+    rolePackVersion: existing?.rolePackVersion,
+    roleTemplateId: existing?.roleTemplateId,
+    relationshipStatePath: existing?.relationshipStatePath,
+    rolePackSource: existing?.rolePackSource,
     boundToMain: ownerRoute ? true : (existing?.boundToMain || undefined),
     orchestrationMode: "dispatcher-first",
     dispatcherRules: {
@@ -431,17 +444,18 @@ function legacyQQSessionKeys(route: string, accountId: string): string[] {
     keys.add(`agent:default:qq:group:${userMatch[1]}`);
   }
   if (isOwnerPrivateRoute(route)) {
-    keys.add(`agent:qq-user-${currentOwnerQq()}:qq:default:${route}`);
-    keys.add(`agent:qq-user-${currentOwnerQq()}:qq:${route}`);
-    keys.add(`agent:qq-user-${currentOwnerQq()}:qq:${currentOwnerQq()}`);
-    keys.add(`agent:qq-user-${currentOwnerQq()}:qq:user:${currentOwnerQq()}`);
-    keys.add(`agent:main:qq:group:${currentOwnerQq()}`);
-    keys.add(`agent:default:qq:group:${currentOwnerQq()}`);
+    const ownerQq = getOwnerQq();
+    keys.add(`agent:qq-user-${ownerQq}:qq:default:${route}`);
+    keys.add(`agent:qq-user-${ownerQq}:qq:${route}`);
+    keys.add(`agent:qq-user-${ownerQq}:qq:${ownerQq}`);
+    keys.add(`agent:qq-user-${ownerQq}:qq:user:${ownerQq}`);
+    keys.add(`agent:main:qq:group:${ownerQq}`);
+    keys.add(`agent:default:qq:group:${ownerQq}`);
   }
   return Array.from(keys);
 }
 
-async function readSessionsJson(filePath: string): Promise<Record<string, any>> {
+export async function readSessionsJson(filePath: string): Promise<Record<string, any>> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
     const json = JSON.parse(raw);
@@ -472,15 +486,73 @@ async function writeSessionsJson(filePath: string, data: Record<string, any>): P
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
-function normalizeSessionStoreDir(storePath: string): string {
+export function normalizeSessionStoreDir(storePath: string): string {
   const normalized = String(storePath || "").trim();
   if (!normalized) return normalized;
   if (path.basename(normalized) === "sessions.json") return path.dirname(normalized);
   return normalized;
 }
 
-function sessionsJsonPathFromStore(storePath: string): string {
+export function sessionsJsonPathFromStore(storePath: string): string {
   return path.join(normalizeSessionStoreDir(storePath), "sessions.json");
+}
+
+export async function resolveSessionTranscriptFile(
+  runtime: ReturnType<typeof getQQRuntime>,
+  cfg: any,
+  agentId: string,
+  sessionKey: string,
+): Promise<string | null> {
+  const stores = [
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId }),
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "default" }),
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "main" }),
+  ];
+  for (const storePath of Array.from(new Set(stores.filter(Boolean)))) {
+    const sessionsPath = sessionsJsonPathFromStore(storePath);
+    const sessions = await readSessionsJson(sessionsPath);
+    const entry = sessions?.[sessionKey];
+    const sessionFile = String(entry?.sessionFile || "").trim();
+    if (sessionFile) return sessionFile;
+  }
+  return null;
+}
+
+export async function repairRouteDeliveryContext(params: {
+  runtime: ReturnType<typeof getQQRuntime>;
+  cfg: any;
+  route: string;
+  agentId: string;
+  accountId?: string;
+}): Promise<boolean> {
+  const { runtime, cfg, route, agentId } = params;
+  const accountId = String(params.accountId || DEFAULT_ACCOUNT_ID);
+  const sessionKey = buildResidentSessionKey(route);
+  const stores = [
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId }),
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "default" }),
+    runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "main" }),
+  ];
+  let updated = false;
+  for (const storePath of Array.from(new Set(stores.filter(Boolean)))) {
+    const sessionsPath = sessionsJsonPathFromStore(storePath);
+    const sessions = await readSessionsJson(sessionsPath);
+    const existing = sessions?.[sessionKey];
+    if (!existing || typeof existing !== "object") continue;
+    sessions[sessionKey] = {
+      ...existing,
+      deliveryContext: {
+        channel: "qq",
+        to: route,
+        accountId,
+      },
+      lastChannel: "qq",
+      lastTo: route,
+    };
+    await writeSessionsJson(sessionsPath, sessions);
+    updated = true;
+  }
+  return updated;
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -525,7 +597,7 @@ async function hasAnyLegacySessionKey(
     runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "main" }),
   ];
   if (isOwnerPrivateRoute(route)) {
-    stores.push(runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: `qq-user-${currentOwnerQq()}` }));
+    stores.push(runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: `qq-user-${getOwnerQq()}` }));
   }
   const oldKeys = legacyQQSessionKeys(route, accountId);
   for (const storePath of Array.from(new Set(stores))) {
@@ -546,6 +618,7 @@ export async function migrateLegacySessionIfNeeded(
   sessionKey: string,
   agentId: string
 ) {
+  const normalizedOldKeys = new Set(legacyQQSessionKeys(route, accountId).filter((key) => key !== sessionKey));
   const newStorePath = runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId });
   const newStore = normalizeSessionStoreDir(newStorePath);
   const markerDir = path.join(newStore, ".qq_route_migrations");
@@ -562,16 +635,25 @@ export async function migrateLegacySessionIfNeeded(
     runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: "main" }),
   ];
   if (isOwnerPrivateRoute(route)) {
-    legacyStores.push(runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: `qq-user-${currentOwnerQq()}` }));
+    legacyStores.push(runtime.channel.session.resolveStorePath(cfg.session?.store, { agentId: `qq-user-${getOwnerQq()}` }));
   }
   const stores = Array.from(new Set([newStore, ...legacyStores]));
-  const oldKeys = legacyQQSessionKeys(route, accountId);
+  const oldKeys = Array.from(normalizedOldKeys);
   logMigrationEvent("qq_session_migrate_start", {
     route,
     account_id: accountId,
     new_session_key: sessionKey,
     old_keys_found: oldKeys.length,
   });
+  if (oldKeys.length === 0) {
+    logMigrationEvent("qq_session_migrate_done", {
+      route,
+      moved: 0,
+      skipped_reason: "no_legacy_keys_found",
+      new_session_key: sessionKey,
+    });
+    return;
+  }
   let migratedValue: any = null;
   let moved = 0;
   const backups = new Map<string, string>();
@@ -658,9 +740,10 @@ export async function migrateLegacySessionIfNeeded(
   }
 
   if (isOwnerPrivateRoute(route)) {
+    const ownerQq = getOwnerQq();
     await scrubQQLegacySessionKeys(runtime, cfg, [
-      `agent:main:qq:group:${currentOwnerQq()}`,
-      `agent:default:qq:group:${currentOwnerQq()}`,
+      `agent:main:qq:group:${ownerQq}`,
+      `agent:default:qq:group:${ownerQq}`,
     ]);
   }
 

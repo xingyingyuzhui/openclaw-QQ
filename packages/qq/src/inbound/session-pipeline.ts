@@ -74,15 +74,16 @@ export function buildQQSystemBlock(params: {
   let systemBlock = "";
   if (compactMode) {
     if (systemPrompt) systemBlock += `<system>${systemPrompt}</system>\n\n`;
-    systemBlock += `<system>你在QQ当前路由回复。不要调用message工具。需要发媒体时仅输出 MEDIA: 本地路径。</system>\n\n`;
+    systemBlock += `<system>你在QQ当前路由回复。不要调用通用message工具。纯对话直接回复；需要发图片/语音/文件时，直接输出 MEDIA: 本地路径，由QQ插件发送到当前会话route。不要把内部思考、计划、推理、自言自语或工具前分析发给用户，只输出最终可见答复。</system>\n\n`;
+    systemBlock += `<system>能力发现提示：QQ相关能力索引优先查看 ${"${OPENCLAW_HOME}"}/workspace/skills/qq-capability-index/SKILL.md。</system>\n\n`;
     if (splitSendRequested) {
       systemBlock += `<system>用户要求分条发送：请用短句分行。</system>\n\n`;
     }
     if (historyContext) systemBlock += `<history>\n${historyContext}\n</history>\n\n`;
     if (mediaBlocked || voiceBlocked) {
       const blockHints: string[] = [];
-      if (mediaBlocked) blockHints.push("禁止输出 MEDIA: 图片/文件");
-      if (voiceBlocked) blockHints.push("禁止输出 MEDIA: 语音");
+        if (mediaBlocked) blockHints.push("禁止输出 MEDIA: 图片/文件");
+        if (voiceBlocked) blockHints.push("禁止输出 MEDIA: 语音");
       if (blockHints.length) {
         systemBlock += `<system>当前路由限制：${blockHints.join("；")}。仅文本回复。</system>\n\n`;
       }
@@ -94,13 +95,14 @@ export function buildQQSystemBlock(params: {
   }
 
   if (systemPrompt) systemBlock += `<system>${systemPrompt}</system>\n\n`;
-  systemBlock += `<system>你当前在QQ路由会话内回复。禁止调用message工具发送消息（包括发到user:/group:）。需要发图片/语音/文件时，直接在回复中输出MEDIA: 路径（可多行），由QQ插件发送到当前会话route。</system>\n\n`;
+  systemBlock += `<system>你当前在QQ路由会话内回复。禁止调用通用message工具发送消息（包括发到user:/group:）。需要发图片/语音/文件时，直接在回复中输出 MEDIA: 路径（可多行），由QQ插件发送到当前会话route。不要把内部思考、计划、推理、自言自语或工具前分析发给用户，只输出最终可见答复。</system>\n\n`;
   systemBlock += `<system>QQ语音入站规则（强制）：当收到语音相关消息（如“[语音消息]”或音频文件）时，必须优先使用本地技能 whisper-stt-local 做转写，再基于转写文本直接回应用户意图；不要先问“要不要转写”。仅当音频损坏/不可读时，才提示用户重发。</system>\n\n`;
-  systemBlock += `<system>whisper-stt-local 路径：${OPENCLAW_HOME}/workspace/skills/whisper-stt-local/SKILL.md。音频转写脚本：bash ${OPENCLAW_HOME}/workspace/skills/whisper-stt-local/scripts/transcribe.sh "<audio_path>"</system>\n\n`;
+  systemBlock += `<system>whisper-stt-local 路径：${"${OPENCLAW_HOME}"}/workspace/skills/whisper-stt-local/SKILL.md。音频转写脚本：bash ${"${OPENCLAW_HOME}"}/workspace/skills/whisper-stt-local/scripts/transcribe.sh "<audio_path>"</system>\n\n`;
   if (splitSendRequested) {
     systemBlock += `<system>用户明确要求“分开发/逐条发”：请用短句分行输出，每行表达一个独立点，不要合并成长段。</system>\n\n`;
   }
-  systemBlock += `<system>技能发现提示：除当前工作区外，还应优先检查共享技能目录 ${OPENCLAW_HOME}/workspace/skills（全局可用），不要只在当前 route 工作区里找 skills 目录。</system>\n\n`;
+  systemBlock += `<system>技能发现提示：除当前工作区外，还应优先检查共享技能目录 ${"${OPENCLAW_HOME}"}/workspace/skills（全局可用），不要只在当前 route 工作区里找 skills 目录。</system>\n\n`;
+  systemBlock += `<system>QQ能力索引：优先查看 ${"${OPENCLAW_HOME}"}/workspace/skills/qq-capability-index/SKILL.md；角色管理相关 skills 包括 qq-role-manager、qq-relationship-manager、qq-agent-admin、qq-owner-console。</system>\n\n`;
   if (historyContext) systemBlock += `<history>\n${historyContext}\n</history>\n\n`;
 
   if ((mediaBlocked || voiceBlocked) && looksLikeMediaGenerationIntent(inboundTextClean)) {
@@ -124,7 +126,7 @@ export function buildQQSystemBlock(params: {
   }
 
   if (!voiceBlocked && looksLikeVoiceIntent(inboundTextClean)) {
-    systemBlock += `<system>当用户请求“语音/TTS/配音”时：优先使用 qwen3-tts-local 技能（路径：${OPENCLAW_HOME}/workspace/skills/qwen3-tts-local/SKILL.md）完成合成；禁止优先走通用 tts 工具。仅在 qwen3-tts-local 明确失败时，才允许回退到通用 tts。输出必须为 MEDIA: 音频路径，由QQ插件发送。</system>\n\n`;
+    systemBlock += `<system>当用户请求“语音/TTS/配音”时：优先使用 qwen3-tts-local 技能（路径：${"${OPENCLAW_HOME}"}/workspace/skills/qwen3-tts-local/SKILL.md）完成合成。拿到本地音频文件后，直接输出 MEDIA: 音频路径。禁止优先走通用 tts 工具。</system>\n\n`;
   }
 
   return { systemBlock, shouldHardBlockMediaIntent: false };

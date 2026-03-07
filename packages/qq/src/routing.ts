@@ -5,21 +5,24 @@ export type ParsedTarget =
 
 const SAFE_GUILD_PART = "[A-Za-z0-9_.-]+";
 const QQ_ROUTE_PATTERN = new RegExp(`^(user:\\d{5,12}|group:\\d{5,12}|guild:${SAFE_GUILD_PART}:${SAFE_GUILD_PART})$`);
-
-let ownerQq = String(process.env.OPENCLAW_QQ_OWNER_ID || "").trim();
-export const OWNER_MAIN_AGENT_ID = "main";
-export const OWNER_MAIN_SESSION_KEY = `agent:${OWNER_MAIN_AGENT_ID}:main`;
-
-export function configureOwnerQq(ownerUserId?: string): void {
-  ownerQq = String(ownerUserId || "").trim();
-}
+const OWNER_PLACEHOLDER = "QQ_OWNER_ID";
 
 export function getOwnerQq(): string {
-  return ownerQq;
+  return String(process.env.OPENCLAW_QQ_OWNER_ID || OWNER_PLACEHOLDER).trim();
 }
 
 export function getOwnerRoute(): string {
-  return ownerQq ? `user:${ownerQq}` : "";
+  return `user:${getOwnerQq()}`;
+}
+
+export const OWNER_MAIN_AGENT_ID = "main";
+
+export function getOwnerMainSessionKey(): string {
+  return `agent:${OWNER_MAIN_AGENT_ID}:main`;
+}
+
+export function getOwnerQqSessionKey(): string {
+  return `agent:${OWNER_MAIN_AGENT_ID}:qq:user:${getOwnerQq()}`;
 }
 
 export function normalizeTarget(raw: string): string {
@@ -39,6 +42,7 @@ export function normalizeTarget(raw: string): string {
   if (/^group:\d{5,12}$/i.test(v)) return v;
   if (/^guild:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/i.test(v)) return v;
 
+  // NOTE: do not auto-map plain digits; require explicit route to avoid group/user misrouting.
   return value;
 }
 
@@ -64,9 +68,7 @@ export async function resolveOutboundTarget(raw: string): Promise<ParsedTarget |
 }
 
 export function isOwnerPrivateRoute(route: string): boolean {
-  const ownerRoute = getOwnerRoute();
-  if (!ownerRoute) return false;
-  return String(route || "").trim() === ownerRoute;
+  return String(route || "").trim() === getOwnerRoute();
 }
 
 export function isValidQQRoute(route: string): boolean {
@@ -87,6 +89,6 @@ export function routeToResidentAgentId(route: string): string {
 
 export function buildResidentSessionKey(route: string): string {
   const normalized = String(route || "").trim();
-  if (isOwnerPrivateRoute(normalized)) return OWNER_MAIN_SESSION_KEY;
+  if (isOwnerPrivateRoute(normalized)) return getOwnerQqSessionKey();
   return `agent:${routeToResidentAgentId(normalized)}:main`;
 }

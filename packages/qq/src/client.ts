@@ -1,11 +1,22 @@
 import WebSocket from "ws";
 import EventEmitter from "events";
-import type { OneBotEvent, OneBotMessage } from "./types.js";
+import type { OneBotEvent } from "./types.js";
+import { createWsClientAdapter } from "./napcat/transport/ws-client-adapter.js";
+import { invokeNapCat } from "./napcat/compat/invoke-napcat.js";
+import type { NapCatAction, NapCatRequestMap, NapCatResponseMap, NapCatVersionPolicy } from "./napcat/contracts/index.js";
+import type { NapCatRawEnvelope } from "./napcat/contracts/index.js";
+import type { NapCatInvokeContext } from "./diagnostics/napcat-trace.js";
 
 interface OneBotClientOptions {
   wsUrl: string;
   accessToken?: string;
   silent?: boolean;
+  accountId?: string;
+  napcatVersionPolicy?: NapCatVersionPolicy;
+  napcatCapabilityProbeEnabled?: boolean;
+  napcatActionTimeoutMs?: number;
+  napcatActionMaxRetries?: number;
+  napcatActionRetryBaseDelayMs?: number;
 }
 
 export class OneBotClient extends EventEmitter {
@@ -19,11 +30,14 @@ export class OneBotClient extends EventEmitter {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private lastMessageAt = 0;
   private silent = false;
+  private accountId = "default";
+  private transport = createWsClientAdapter(this);
 
   constructor(options: OneBotClientOptions) {
     super();
     this.options = options;
     this.silent = Boolean(options.silent);
+    this.accountId = String(options.accountId || "default").trim() || "default";
   }
 
   getSelfId(): number | null {
@@ -32,6 +46,27 @@ export class OneBotClient extends EventEmitter {
 
   setSelfId(id: number) {
     this.selfId = id;
+  }
+
+  private buildInvokeContext(partial?: {
+    route?: string;
+    requestId?: string;
+    source?: "chat" | "automation" | "inbound";
+    stage?: string;
+    msgId?: string;
+    dispatchId?: string;
+    attemptId?: string;
+  }): NapCatInvokeContext {
+    return {
+      accountId: this.accountId,
+      route: String(partial?.route || "system"),
+      requestId: String(partial?.requestId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+      source: partial?.source || "chat",
+      stage: partial?.stage,
+      msgId: partial?.msgId,
+      dispatchId: partial?.dispatchId,
+      attemptId: partial?.attemptId,
+    };
   }
 
   connect() {
@@ -120,7 +155,7 @@ export class OneBotClient extends EventEmitter {
       // Soft timeout: probe first, don't immediately drop socket.
       if (elapsed >= softTimeoutMs && elapsed < hardTimeoutMs) {
         try {
-          await this.getLoginInfo();
+          await this.invokeNapCatAction("get_login_info", {}, { route: "system", source: "chat", stage: "heartbeat_probe" });
           this.isAlive = true;
           this.lastMessageAt = Date.now();
           return;
@@ -156,128 +191,7 @@ export class OneBotClient extends EventEmitter {
     }, delay);
   }
 
-  sendPrivateMsg(userId: number, message: OneBotMessage | string) {
-    this.send("send_private_msg", { user_id: userId, message });
-  }
-
-  async sendPrivateMsgWithResponse(userId: number, message: OneBotMessage | string): Promise<any> {
-    return this.sendWithResponse("send_private_msg", { user_id: userId, message });
-  }
-
-  sendGroupMsg(groupId: number, message: OneBotMessage | string) {
-    this.send("send_group_msg", { group_id: groupId, message });
-  }
-
-  async sendGroupMsgWithResponse(groupId: number, message: OneBotMessage | string): Promise<any> {
-    return this.sendWithResponse("send_group_msg", { group_id: groupId, message });
-  }
-
-  deleteMsg(messageId: number | string) {
-    this.send("delete_msg", { message_id: messageId });
-  }
-
-  setGroupAddRequest(flag: string, subType: string, approve: boolean = true, reason: string = "") {
-    this.send("set_group_add_request", { flag, sub_type: subType, approve, reason });
-  }
-
-  setFriendAddRequest(flag: string, approve: boolean = true, remark: string = "") {
-    this.send("set_friend_add_request", { flag, approve, remark });
-  }
-
-  async getLoginInfo(): Promise<any> {
-    return this.sendWithResponse("get_login_info", {});
-  }
-
-  async getMsg(messageId: number | string): Promise<any> {
-    return this.sendWithResponse("get_msg", { message_id: messageId });
-  }
-
-  // Note: get_group_msg_history is extended API supported by go-cqhttp/napcat
-  async getGroupMsgHistory(groupId: number): Promise<any> {
-    return this.sendWithResponse("get_group_msg_history", { group_id: groupId });
-  }
-
-  async getForwardMsg(id: string): Promise<any> {
-    return this.sendWithResponse("get_forward_msg", { id });
-  }
-
-  async getFriendList(): Promise<any[]> {
-    return this.sendWithResponse("get_friend_list", {});
-  }
-
-  async getGroupList(): Promise<any[]> {
-    return this.sendWithResponse("get_group_list", {});
-  }
-
-  async canSendRecord(): Promise<boolean> {
-    try {
-      const data = await this.sendWithResponse("can_send_record", {});
-      return Boolean(data?.yes);
-    } catch {
-      return false;
-    }
-  }
-
-  async canSendImage(): Promise<boolean> {
-    try {
-      const data = await this.sendWithResponse("can_send_image", {});
-      return Boolean(data?.yes);
-    } catch {
-      // Some NapCat builds do not expose can_send_image; do not hard-fail image sends.
-      return true;
-    }
-  }
-
-  async sendAction(action: string, params: Record<string, any>): Promise<any> {
-    return this.sendWithResponse(action, params || {});
-  }
-
-  // --- Guild (Channel) Extension APIs ---
-  sendGuildChannelMsg(guildId: string, channelId: string, message: OneBotMessage | string) {
-    this.send("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
-  }
-
-  async sendGuildChannelMsgWithResponse(guildId: string, channelId: string, message: OneBotMessage | string): Promise<any> {
-    return this.sendWithResponse("send_guild_channel_msg", { guild_id: guildId, channel_id: channelId, message });
-  }
-
-  async getGuildList(): Promise<any[]> {
-    // Note: API name varies by implementation (get_guild_list vs get_guilds)
-    // We try the most common one for extended OneBot
-    try {
-        return await this.sendWithResponse("get_guild_list", {});
-    } catch {
-        return [];
-    }
-  }
-
-  async getGuildServiceProfile(): Promise<any> {
-      try { return await this.sendWithResponse("get_guild_service_profile", {}); } catch { return null; }
-  }
-
-  sendGroupPoke(groupId: number, userId: number) {
-      this.send("group_poke", { group_id: groupId, user_id: userId });
-      // Note: Some implementations use send_poke or touch
-      // Standard OneBot v11 doesn't enforce poke API, but group_poke is common in go-cqhttp
-  }
-
-  async setInputStatus(userId: number | string, eventType: number): Promise<any> {
-    return this.sendWithResponse("set_input_status", {
-      user_id: String(userId),
-      event_type: Number(eventType),
-    });
-  }
-  // --------------------------------------
-
-  setGroupBan(groupId: number, userId: number, duration: number = 1800) {
-    this.send("set_group_ban", { group_id: groupId, user_id: userId, duration });
-  }
-
-  setGroupKick(groupId: number, userId: number, rejectAddRequest: boolean = false) {
-    this.send("set_group_kick", { group_id: groupId, user_id: userId, reject_add_request: rejectAddRequest });
-  }
-
-  private sendWithResponse(action: string, params: any): Promise<any> {
+  async callActionEnvelope(action: string, params: Record<string, unknown>, timeoutMs = 5000): Promise<NapCatRawEnvelope> {
     return new Promise((resolve, reject) => {
       if (this.ws?.readyState !== WebSocket.OPEN) {
         reject(new Error("WebSocket not open"));
@@ -285,17 +199,14 @@ export class OneBotClient extends EventEmitter {
       }
 
       const echo = Math.random().toString(36).substring(2, 15);
+      let timeoutHandle: NodeJS.Timeout | null = null;
       const handler = (data: WebSocket.RawData) => {
         try {
-          const resp = JSON.parse(data.toString());
+          const resp = JSON.parse(data.toString()) as NapCatRawEnvelope;
           if (resp.echo === echo) {
             this.ws?.off("message", handler);
-            if (resp.status === "ok") {
-              resolve(resp.data);
-            } else {
-              const target = params?.group_id ?? params?.user_id ?? (params?.guild_id && params?.channel_id ? `${params.guild_id}:${params.channel_id}` : "unknown");
-              reject(new Error(`[${action}] failed target=${target} msg=${resp.msg || "API request failed"}`));
-            }
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            resolve(resp);
           }
         } catch (err) {
           // Ignore non-JSON messages
@@ -305,20 +216,44 @@ export class OneBotClient extends EventEmitter {
       this.ws.on("message", handler);
       this.ws.send(JSON.stringify({ action, params, echo }));
 
-      // Timeout after 5 seconds
-      setTimeout(() => {
+      timeoutHandle = setTimeout(() => {
         this.ws?.off("message", handler);
         reject(new Error("Request timeout"));
-      }, 5000);
+      }, Math.max(100, Number(timeoutMs || 5000)));
     });
   }
 
-  private send(action: string, params: any) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ action, params }));
-    } else {
-      if (!this.silent) console.warn("[QQ] Cannot send message, WebSocket not open");
-    }
+  async invokeNapCatAction<A extends NapCatAction>(
+    action: A,
+    params: NapCatRequestMap[A],
+    ctx?: {
+      route?: string;
+      requestId?: string;
+      source?: "chat" | "automation" | "inbound";
+      stage?: string;
+      msgId?: string;
+      dispatchId?: string;
+      attemptId?: string;
+    },
+  ): Promise<NapCatResponseMap[A]> {
+    const route = String(ctx?.route || (typeof (params as any)?.group_id !== "undefined"
+      ? `group:${String((params as any).group_id)}`
+      : typeof (params as any)?.user_id !== "undefined"
+        ? `user:${String((params as any).user_id)}`
+        : "system"));
+    return invokeNapCat({
+      transport: this.transport,
+      action,
+      params,
+      ctx: this.buildInvokeContext({ ...ctx, route }),
+      options: {
+        versionPolicy: this.options.napcatVersionPolicy || "new-first-with-legacy-fallback",
+        capabilityProbeEnabled: this.options.napcatCapabilityProbeEnabled !== false,
+        actionTimeoutMs: Number(this.options.napcatActionTimeoutMs || 5000),
+        actionMaxRetries: Number(this.options.napcatActionMaxRetries ?? 1),
+        actionRetryBaseDelayMs: Number(this.options.napcatActionRetryBaseDelayMs ?? 300),
+      },
+    });
   }
 
   async waitUntilConnected(timeoutMs = 5000): Promise<boolean> {

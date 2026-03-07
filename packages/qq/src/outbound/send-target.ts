@@ -1,6 +1,11 @@
 import type { OneBotClient } from "../client.js";
 import type { ParsedTarget } from "../routing.js";
 import type { OneBotMessage } from "../types.js";
+import {
+  sendGroupMessage,
+  sendGuildChannelMessage,
+  sendPrivateMessage,
+} from "../services/message-service.js";
 
 export function summarizeText(text?: string, limit = 180): string {
   const t = (text || "").replace(/\s+/g, " ").trim();
@@ -25,17 +30,30 @@ export function logSendAttempt(meta: {
   );
 }
 
-export async function sendToParsedTarget(client: OneBotClient, target: ParsedTarget, message: OneBotMessage | string) {
+export async function sendToParsedTarget(
+  client: OneBotClient,
+  target: ParsedTarget,
+  message: OneBotMessage | string,
+  ctx?: {
+    route?: string;
+    requestId?: string;
+    source?: "chat" | "automation" | "inbound";
+    stage?: string;
+    msgId?: string;
+    dispatchId?: string;
+    attemptId?: string;
+  },
+) {
   if (target.kind === "group") {
-    return { action: "send_group_msg", response: await client.sendGroupMsgWithResponse(target.groupId, message) };
+    return { action: "send_group_msg", response: await sendGroupMessage(client, target.groupId, message, ctx) };
   }
   if (target.kind === "guild") {
     return {
       action: "send_guild_channel_msg",
-      response: await client.sendGuildChannelMsgWithResponse(target.guildId, target.channelId, message),
+      response: await sendGuildChannelMessage(client, target.guildId, target.channelId, message, ctx),
     };
   }
-  return { action: "send_private_msg", response: await client.sendPrivateMsgWithResponse(target.userId, message) };
+  return { action: "send_private_msg", response: await sendPrivateMessage(client, target.userId, message, ctx) };
 }
 
 export function splitMessage(text: string, limit: number): string[] {
